@@ -1,10 +1,11 @@
 import { MODE_LETTER, MODES, type Mode } from '@get/shared';
 
-export function Badges({ available, chosen }: { available: Mode[]; chosen?: Mode }) {
+/** S/P/D strip: dark = offered, light grey = not offered. */
+export function Badges({ available }: { available: Mode[] }) {
   return (
     <span className="badges">
       {MODES.map((m) => (
-        <span key={m} className={m === chosen ? 'on' : available.includes(m) ? '' : 'off'}>
+        <span key={m} className={available.includes(m) ? undefined : 'off'}>
           {MODE_LETTER[m]}
         </span>
       ))}
