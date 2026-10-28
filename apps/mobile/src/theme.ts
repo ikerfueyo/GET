@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-/** Palette taken from the sketches: black, white, greys, and red only for "selected". */
+/** Palette taken from the sketches: black, white, greys, and one accent per open interface. */
 export const colors = {
   black: '#000000',
   white: '#FFFFFF',
@@ -10,7 +10,9 @@ export const colors = {
   line: '#1A1A1A',
   hairline: '#D0D0D0',
   muted: '#7A7A7A',
-  red: '#E53935',
+  red: '#E53935', // selected location, open Location interface
+  green: '#007514', // open Orders interface (cart icon in Orders Interface 2.png)
+  blue: '#2D5BC4', // open Account interface
   shadeOff: '#ECECEC', // S/P/D mode not offered
   ocean: '#2D5BC4',
   land: '#2E7D4F',
