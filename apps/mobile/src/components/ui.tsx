@@ -8,28 +8,21 @@ export function T({ style, ...rest }: TextProps & { style?: StyleProp<TextStyle>
 }
 
 /**
- * S / P / D availability, as in the Product-Oriented Search Concept:
- * yellow = recommended, white = available, red = not offered (ranking design v1).
+ * S / P / D strip, as in the Product-Oriented Search Concept: grey shades only,
+ * dark = can be gotten that way (in-store / pickup / delivery), light = not offered.
  */
-export function ModeBadges({ available, chosen, size = 20 }: { available: Record<Mode, boolean>; chosen?: Mode; size?: number }) {
+export function ModeBadges({ available, size = 20 }: { available: Record<Mode, boolean>; size?: number }) {
   return (
     <View style={{ flexDirection: 'row' }}>
       {MODES.map((m, i) => {
         const on = available[m];
-        const isChosen = m === chosen;
         return (
           <View
             key={m}
-            style={[
-              styles.badge,
-              { width: size, height: size, marginLeft: i ? -1 : 0 },
-              !on && { backgroundColor: colors.redSoft },
-              isChosen && { backgroundColor: colors.yellow },
-            ]}
+            accessibilityLabel={`${MODE_LETTER[m]} ${on ? 'available' : 'not available'}`}
+            style={[styles.badge, { width: size, height: size, marginLeft: i ? -1 : 0 }, on ? styles.badgeOn : styles.badgeOff]}
           >
-            <T style={[styles.badgeText, { fontSize: size * 0.6 }, !on && { color: colors.muted }]}>
-              {MODE_LETTER[m]}
-            </T>
+            <T style={[styles.badgeText, { fontSize: size * 0.6 }, { color: on ? colors.white : colors.muted }]}>{MODE_LETTER[m]}</T>
           </View>
         );
       })}
@@ -88,6 +81,8 @@ export function SectionHeader({ title, onPress, right }: { title: string; onPres
 
 const styles = StyleSheet.create({
   badge: { borderWidth: 1, borderColor: colors.black, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
+  badgeOn: { backgroundColor: colors.ink, borderColor: colors.white },
+  badgeOff: { backgroundColor: colors.shadeOff, borderColor: colors.hairline },
   badgeText: { fontWeight: '700' },
   btn: { height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   btnText: { color: colors.white, fontWeight: '700', fontSize: 16, letterSpacing: 0.3 },

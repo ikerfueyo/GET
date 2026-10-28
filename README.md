@@ -64,7 +64,7 @@ Presets: Cheapest ($0/h, $0/day), Balanced ($20/h, $3/day, the default) and Soon
 - The globe is always the background: drag to rotate, pinch (or scroll on web) to zoom, tap anywhere to pick a location, tap the pin to zoom into it. The Moon and Mars sit where they really are right now.
 - The floating bar on the left opens Location, Orders and Account. Drag it anywhere; it fades when idle.
 - Search lives at the bottom. Drag it up or tap it to expand. The robot button turns it into the assistant ("barbecue for 8 people"); `a + b + c` searches a bundle.
-- Each result shows the S/P/D availability (yellow = recommended, white = available, red = not offered) and ETA. Tap a result for every option, then GET (buy now) or + (add to that store's cart).
+- Each result shows the S/P/D strip in grey shades (dark = offered in-store / pickup / delivery, light = not offered) and ETA. Tap a result for every option, then GET (buy now) or + (add to that store's cart).
 
 ## Next steps
 

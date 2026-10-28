@@ -32,7 +32,7 @@ export default async function Search({ searchParams }: Props) {
             </div>
             <div className="price">{formatMoney(r.best.total, r.best.currency)}</div>
             <div style={{ textAlign: 'center' }}>
-              <Badges available={MODES.filter((m) => r.modes[m])} chosen={r.best.mode} />
+              <Badges available={MODES.filter((m) => r.modes[m])} />
               <div>{formatEta(r.best.etaMinutes)}</div>
             </div>
           </div>

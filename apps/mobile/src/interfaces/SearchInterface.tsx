@@ -215,7 +215,7 @@ function ResultRow({ result }: { result: ProductResult }) {
           </View>
         </View>
         <View style={styles.modeCol}>
-          <ModeBadges available={result.modes} chosen={best.mode} />
+          <ModeBadges available={result.modes} />
           <T style={styles.eta}>{formatEta(best.etaMinutes)}</T>
         </View>
       </Pressable>
@@ -223,8 +223,8 @@ function ResultRow({ result }: { result: ProductResult }) {
       {open && (
         <View style={styles.options}>
           <T style={styles.desc}>{p.description}</T>
-          {result.options.slice(0, 6).map((o, i) => (
-            <OptionRow key={o.offerId + o.mode} o={o} best={i === 0} onGet={() => buyNow(o.offerId, o.mode)} onAdd={() => addToCart(o.offerId, o.mode)} />
+          {result.options.slice(0, 6).map((o) => (
+            <OptionRow key={o.offerId + o.mode} o={o} onGet={() => buyNow(o.offerId, o.mode)} onAdd={() => addToCart(o.offerId, o.mode)} />
           ))}
         </View>
       )}
@@ -232,10 +232,10 @@ function ResultRow({ result }: { result: ProductResult }) {
   );
 }
 
-function OptionRow({ o, best, onGet, onAdd }: { o: OfferOption; best: boolean; onGet: () => void; onAdd: () => void }) {
+function OptionRow({ o, onGet, onAdd }: { o: OfferOption; onGet: () => void; onAdd: () => void }) {
   return (
     <View style={styles.option}>
-      <View style={[styles.optMode, best && { backgroundColor: colors.yellow }]}>
+      <View style={styles.optMode}>
         <T style={{ fontWeight: '700' }}>{MODE_LETTER[o.mode]}</T>
       </View>
       <View style={{ flex: 1 }}>
