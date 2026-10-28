@@ -1,7 +1,8 @@
 /**
  * HS 1: planet Earth in black space, orbited by the Moon and Mars.
  * Drag to rotate, pinch (or mouse wheel on web) to zoom, tap anywhere to pick
- * a location, tap the selected pin to zoom into it.
+ * a location, tap the selected pin to zoom into it. Zooming in past the
+ * globe's closest view (or tapping the pin) dives into the street map, HS 2.
  *
  * Drawn with d3-geo's orthographic projection into react-native-svg so it
  * runs in Expo Go and on the web without native 3D.
@@ -31,12 +32,14 @@ type Props = {
   /** when this object changes the globe flies to it */
   focus?: { point: LatLng; zoom?: number; key: number };
   onPick?: (point: LatLng) => void;
+  /** zoomed in past MAX_ZOOM: time for the street map */
+  onDive?: (center: LatLng) => void;
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
-export function Globe({ width, height, selected, focus, onPick }: Props) {
+export function Globe({ width, height, selected, focus, onPick, onDive }: Props) {
   // rotation is [-lng, -lat] of the point facing the viewer
   const view = useRef({ lambda: -selected.lng, phi: -clamp(selected.lat, -60, 60), zoom: 1 });
   const [, setFrame] = useState(0);
@@ -59,7 +62,7 @@ export function Globe({ width, height, selected, focus, onPick }: Props) {
     anim.current = null;
   };
 
-  const flyTo = (p: LatLng, zoom?: number) => {
+  const flyTo = (p: LatLng, zoom?: number, then?: () => void) => {
     stopAnim();
     const from = { ...view.current };
     // take the short way around
@@ -78,8 +81,14 @@ export function Globe({ width, height, selected, focus, onPick }: Props) {
       };
       redraw();
       anim.current = t < 1 ? requestAnimationFrame(step) : null;
+      if (t >= 1) then?.();
     };
     anim.current = requestAnimationFrame(step);
+  };
+
+  const dive = () => {
+    const { lambda: l, phi: p } = view.current;
+    latest.current.onDive?.({ lng: -l, lat: -p });
   };
 
   useEffect(() => {
@@ -104,15 +113,15 @@ export function Globe({ width, height, selected, focus, onPick }: Props) {
   const pin = pinVisible ? projection([selected.lng, selected.lat]) : null;
 
   // ── gestures ──
-  const gesture = useRef({ lambda: 0, phi: 0, zoom: 1, pinch: 0, t: 0, moved: false });
+  const gesture = useRef({ lambda: 0, phi: 0, zoom: 1, pinch: 0, t: 0, moved: false, dived: false });
   const pinchDistance = (e: GestureResponderEvent) => {
     const t = e.nativeEvent.touches;
     if (t.length < 2) return 0;
     return Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
   };
 
-  const latest = useRef({ projection, pin, onPick, cx, cy, r });
-  latest.current = { projection, pin, onPick, cx, cy, r };
+  const latest = useRef({ projection, pin, onPick, onDive, cx, cy, r });
+  latest.current = { projection, pin, onPick, onDive, cx, cy, r };
 
   const responder = useMemo(
     () =>
@@ -121,14 +130,19 @@ export function Globe({ width, height, selected, focus, onPick }: Props) {
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (e) => {
           stopAnim();
-          gesture.current = { ...view.current, pinch: pinchDistance(e), t: Date.now(), moved: false };
+          gesture.current = { ...view.current, pinch: pinchDistance(e), t: Date.now(), moved: false, dived: false };
         },
         onPanResponderMove: (e, g) => {
           const d = pinchDistance(e);
           if (d > 0) {
             if (!gesture.current.pinch) gesture.current.pinch = d;
-            view.current.zoom = clamp((gesture.current.zoom * d) / gesture.current.pinch, MIN_ZOOM, MAX_ZOOM);
+            const want = (gesture.current.zoom * d) / gesture.current.pinch;
+            view.current.zoom = clamp(want, MIN_ZOOM, MAX_ZOOM);
             gesture.current.moved = true;
+            if (want > MAX_ZOOM * 1.2 && !gesture.current.dived) {
+              gesture.current.dived = true;
+              dive();
+            }
           } else {
             if (Math.abs(g.dx) + Math.abs(g.dy) > 6) gesture.current.moved = true;
             // degrees per pixel shrink as you zoom in, like Apple Maps
@@ -139,6 +153,7 @@ export function Globe({ width, height, selected, focus, onPick }: Props) {
           redraw();
         },
         onPanResponderRelease: (e, g) => {
+          if (gesture.current.dived) return;
           if (!gesture.current.moved && Date.now() - gesture.current.t < 400) {
             handleTap(e.nativeEvent.locationX, e.nativeEvent.locationY);
             return;
@@ -168,7 +183,7 @@ export function Globe({ width, height, selected, focus, onPick }: Props) {
     if (p && Math.hypot(p[0] - x, p[1] - y) < 26) {
       // "Location is zoomed into upon touch"
       const ll = proj.invert?.([p[0], p[1]]);
-      if (ll) flyTo({ lng: ll[0], lat: ll[1] }, clamp(view.current.zoom * 2.5, 2.5, MAX_ZOOM));
+      if (ll) flyTo({ lng: ll[0], lat: ll[1] }, MAX_ZOOM, dive);
       return;
     }
     if (Math.hypot(x - X, y - Y) > R) return; // tapped space
@@ -176,11 +191,20 @@ export function Globe({ width, height, selected, focus, onPick }: Props) {
     if (ll && pick) pick({ lng: ll[0], lat: ll[1] });
   }
 
+  const wheelIn = useRef(0);
   const webWheel =
     Platform.OS === 'web'
       ? {
           onWheel: (e: { deltaY: number; preventDefault?: () => void }) => {
             stopAnim();
+            // keep scrolling in past the closest view to dive into the streets
+            if (view.current.zoom >= MAX_ZOOM && e.deltaY < 0) {
+              wheelIn.current -= e.deltaY;
+              if (wheelIn.current > 240) {
+                wheelIn.current = 0;
+                return dive();
+              }
+            } else wheelIn.current = 0;
             view.current.zoom = clamp(view.current.zoom * Math.exp(-e.deltaY * 0.0015), MIN_ZOOM, MAX_ZOOM);
             redraw();
           },
