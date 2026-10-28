@@ -15,7 +15,7 @@ export function CartIcon({ size = 18, color = '#000' }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M2 3h3l2.6 11.2a1 1 0 0 0 1 .8h9.6a1 1 0 0 0 1-.8L21 7H6.2" stroke={color} strokeWidth={2} fill="none" strokeLinejoin="round" />
-      <Path d="M7.2 7h13.3l-1.6 7H8.8z" fill={color} />
+      <Path d="M5.9 7H21l-1.8 7.2H7.6z" fill={color} />
       <Circle cx={9.5} cy={19.5} r={1.7} fill={color} />
       <Circle cx={17.5} cy={19.5} r={1.7} fill={color} />
     </Svg>
