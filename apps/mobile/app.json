@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "GET",
+    "slug": "get",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.get.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "app.get.mobile"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "get",
+    "backgroundColor": "#000000",
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "GET uses your location to find the closest, fastest way to get anything."
+        }
+      ]
+    ]
+  }
+}

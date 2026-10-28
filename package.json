@@ -1,0 +1,14 @@
+{
+  "name": "get",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "mobile": "npm run start -w @get/mobile",
+    "web": "npm run dev -w @get/web",
+    "api": "npm run dev -w @get/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:seed-sql": "npm run seed-sql -w @get/shared"
+  }
+}
