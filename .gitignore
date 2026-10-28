@@ -1,0 +1,9 @@
+node_modules
+.expo
+.next
+dist
+*.tsbuildinfo
+.env
+.env.local
+web-build
+next-env.d.ts
