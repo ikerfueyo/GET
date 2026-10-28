@@ -40,6 +40,9 @@ The mobile app works on its own: search and checkout run on the device. To send 
 1. Create a project at supabase.com, then in this folder: `npx supabase init` (keep the existing `supabase/` files), `npx supabase link`, `npx supabase db push`.
 2. Load the catalogue: paste `supabase/seed.sql` into the SQL editor, or run `psql "$DATABASE_URL" -f supabase/seed.sql`.
 3. Optional: to persist API orders, copy `apps/api/.env.example` to `apps/api/.env` and fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and a `DEMO_USER_ID` (a user from Authentication → Users).
+4. Sign-in: run the app with `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API) set, e.g. in `apps/mobile/.env`. Register and Sign in then use Supabase Auth (email + password) and the `profiles` row is created by the trigger in the migration. For a quick demo, turn off Authentication → Providers → Email → "Confirm email".
+
+Without those two variables, Login/Register still works: accounts are kept on the device (AsyncStorage, salted SHA-256 password), so anyone can try the app in Expo Go. Log out in Account returns to the Login screen.
 
 ## Fake payments
 
@@ -61,6 +64,7 @@ Presets: Cheapest ($0/h, $0/day), Balanced ($20/h, $3/day, the default) and Soon
 ## Home screen (from the sketches)
 
 - Loading: white fades to black around the GET mark.
+- Login/Register (LRI 1, blank in the sketches): white page, GET mark, Sign in / Register toggle, email + password (and name to register). Shown until you are signed in; each account gets its own carts, orders and wallet.
 - The globe is always the background: drag to rotate, pinch (or scroll on web) to zoom, tap anywhere to pick a location, tap the pin to zoom into it. The Moon and Mars sit where they really are right now.
 - The floating bar on the left opens Location, Orders and Account. Drag it anywhere; it fades when idle.
 - Search lives at the bottom. Drag it up or tap it to expand. The robot button turns it into the assistant ("barbecue for 8 people"); `a + b + c` searches a bundle.
@@ -69,7 +73,7 @@ Presets: Cheapest ($0/h, $0/day), Balanced ($20/h, $3/day, the default) and Soon
 ## Next steps
 
 - Street-level map when zoomed in (HS 2), via react-native-maps or Mapbox.
-- Supabase Auth sign-in and reading the catalogue from the database in the apps.
+- Reading the catalogue and saving carts/orders per user in Supabase (sign-in already uses Supabase Auth when configured).
 - Group carts: invite, split by fraction or items, discounts (Orders Interface specs).
 - Location add/edit forms (building type, details, label) and sharing.
 - Swap the rule-based assistant for an LLM.

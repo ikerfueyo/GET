@@ -9,6 +9,7 @@ import { formatMoney } from '@get/shared';
 import { BackIcon, ChevronIcon } from '../components/Icons';
 import { Button, T } from '../components/ui';
 import { useApp } from '../state/AppState';
+import { useAuth } from '../state/Auth';
 import { colors, fonts } from '../theme';
 
 type Page = 'home' | 'personal' | 'wallet' | 'cash' | 'favorites' | 'loyalty';
@@ -23,7 +24,7 @@ const PAGES: { key: Page; label: string }[] = [
 
 export function AccountInterface({ top, bottom }: { top: number; bottom: number }) {
   const [page, setPage] = useState<Page>('home');
-  const { showToast, setPanel } = useApp();
+  const { user, signOut } = useAuth();
 
   return (
     <View style={[styles.panel, { top, bottom }]}>
@@ -31,11 +32,11 @@ export function AccountInterface({ top, bottom }: { top: number; bottom: number 
         <ScrollView>
           <View style={styles.profile}>
             <View style={styles.avatar}>
-              <T style={styles.avatarText}>G</T>
+              <T style={styles.avatarText}>{(user?.name || user?.email || 'G').charAt(0).toUpperCase()}</T>
             </View>
-            <View>
-              <T style={styles.name}>Guest</T>
-              <T style={styles.sub}>Demo account · simulated payments</T>
+            <View style={{ flex: 1 }}>
+              <T style={styles.name} numberOfLines={1}>{user?.name || 'Guest'}</T>
+              <T style={styles.sub} numberOfLines={1}>{user?.email ? `${user.email} · simulated payments` : 'Demo account · simulated payments'}</T>
             </View>
           </View>
           {PAGES.map((p) => (
@@ -44,13 +45,8 @@ export function AccountInterface({ top, bottom }: { top: number; bottom: number 
               <ChevronIcon size={16} />
             </Pressable>
           ))}
-          <Pressable
-            style={styles.row}
-            onPress={() => {
-              setPanel(null);
-              showToast('Logged out (demo)');
-            }}
-          >
+          {/* back to the Login/Register screen; App drops this account's state */}
+          <Pressable style={styles.row} onPress={signOut}>
             <T style={[styles.rowText, { color: colors.red }]}>Log out</T>
           </Pressable>
         </ScrollView>
@@ -123,12 +119,21 @@ function GetCash() {
 }
 
 function Personal() {
+  const { user, backend } = useAuth();
+  const prefill: Record<string, string | undefined> = { Name: user?.name, Email: user?.email };
   return (
     <View style={{ gap: 8 }}>
       {['Name', 'Username', 'Phone', 'Email'].map((f) => (
-        <TextInput key={f} style={styles.input} placeholder={f} placeholderTextColor={colors.muted} />
+        <TextInput
+          key={f}
+          style={[styles.input, f === 'Email' && { color: colors.muted }]}
+          placeholder={f}
+          placeholderTextColor={colors.muted}
+          defaultValue={prefill[f]}
+          editable={f !== 'Email'}
+        />
       ))}
-      <T style={styles.sub}>Sign-in with Supabase Auth is wired in the schema; this demo keeps details on the device.</T>
+      <T style={styles.sub}>{backend === 'supabase' ? 'Signed in with GET (Supabase Auth).' : 'Demo account saved on this phone only.'}</T>
     </View>
   );
 }
