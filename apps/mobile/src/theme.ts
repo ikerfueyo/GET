@@ -12,7 +12,7 @@ export const colors = {
   muted: '#7A7A7A',
   red: '#E53935', // selected location, open Location interface
   green: '#007514', // open Orders interface (cart icon in Orders Interface 2.png)
-  blue: '#2D5BC4', // open Account interface
+  blue: '#4A86E8', // open Account interface
   shadeOff: '#ECECEC', // S/P/D mode not offered
   ocean: '#2D5BC4',
   land: '#2E7D4F',
