@@ -69,14 +69,14 @@ export function SideBar({ top, bounds }: { top: number; bounds: { width: number;
   );
 
   const items = [
-    { key: 'location' as const, Icon: PinIcon, label: 'Location' },
-    { key: 'orders' as const, Icon: CartIcon, label: 'Orders' },
-    { key: 'account' as const, Icon: PersonIcon, label: 'Account' },
+    { key: 'location' as const, Icon: PinIcon, label: 'Location', accent: colors.red },
+    { key: 'orders' as const, Icon: CartIcon, label: 'Orders', accent: colors.green },
+    { key: 'account' as const, Icon: PersonIcon, label: 'Account', accent: colors.blue },
   ];
 
   return (
     <Animated.View style={[styles.bar, { transform: pos.getTranslateTransform(), opacity }]} {...responder.panHandlers}>
-      {items.map(({ key, Icon, label }, i) => {
+      {items.map(({ key, Icon, label, accent }, i) => {
         const active = panel === key;
         return (
           <Pressable
@@ -90,7 +90,7 @@ export function SideBar({ top, bounds }: { top: number; bounds: { width: number;
             }}
             style={[styles.btn, i > 0 && styles.divider]}
           >
-            <Icon size={18} color={active ? colors.red : colors.black} />
+            <Icon size={18} color={active ? accent : colors.black} />
           </Pressable>
         );
       })}
