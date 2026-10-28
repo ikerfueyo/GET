@@ -40,7 +40,7 @@ The mobile app works on its own: search and checkout run on the device. To send 
 1. Create a project at supabase.com, then in this folder: `npx supabase init` (keep the existing `supabase/` files), `npx supabase link`, `npx supabase db push`.
 2. Load the catalogue: paste `supabase/seed.sql` into the SQL editor, or run `psql "$DATABASE_URL" -f supabase/seed.sql`.
 3. Optional: to persist API orders, copy `apps/api/.env.example` to `apps/api/.env` and fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and a `DEMO_USER_ID` (a user from Authentication → Users).
-4. Sign-in: run the app with `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API) set, e.g. in `apps/mobile/.env`. Register and Sign in then use Supabase Auth (email + password) and the `profiles` row is created by the trigger in the migration. For a quick demo, turn off Authentication → Providers → Email → "Confirm email".
+4. Sign-in: run the app with `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API; a `sb_publishable_…` key works too) set, e.g. in `apps/mobile/.env`. EAS Update reads them from the project's EAS environment variables, which are already set for the Expo Go link. Register and Sign in then use Supabase Auth (email + password) and the `profiles` row is created by the trigger in the migration. For a quick demo, turn off Authentication → Providers → Email → "Confirm email".
 
 Without those two variables, Login/Register still works: accounts are kept on the device (AsyncStorage, salted SHA-256 password), so anyone can try the app in Expo Go. Log out in Account returns to the Login screen.
 
