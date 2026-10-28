@@ -18,8 +18,8 @@ describe('seed', () => {
 });
 
 describe('search', () => {
-  it('finds both baseball bats and ranks a nearby option first', () => {
-    const res = search({ query: 'baseball bat', location: newHaven });
+  it('finds both baseball bats; Soonest puts a same-day option first', () => {
+    const res = search({ query: 'baseball bat', location: newHaven, preset: 'soonest' });
     expect(res.map((r) => r.product.name)).toEqual(
       expect.arrayContaining(['Wooden baseball bat 33 in', 'Metal baseball bat 32 in']),
     );
@@ -33,6 +33,11 @@ describe('search', () => {
     const res = search({ query: 'water', location: newHaven, modes: ['delivery'] });
     expect(res.length).toBeGreaterThan(0);
     expect(res.every((r) => r.options.every((o) => o.mode === 'delivery'))).toBe(true);
+  });
+  it('Balanced lets a much cheaper parcel beat a pricey nearby store', () => {
+    const [r] = search({ query: 'airpods', location: { lat: 19.4326, lng: -99.1937 } });
+    expect(r.best.mode).toBe('delivery');
+    expect(r.best.etaMinutes).toBeGreaterThan(24 * 60);
   });
   it('can sort by price', () => {
     const res = search({ query: 'airpods', location: newHaven, sort: 'price' });

@@ -1,16 +1,26 @@
 /**
- * The "optimal offer" engine. For a query and a location it looks at every
- * offer of every matching product, works out each way of getting it
- * (in-store / pickup / delivery), and ranks them by effective cost:
+ * The "optimal offer" engine, following ranking design v1. For a query and a
+ * location it looks at every offer of every matching product, works out each
+ * way of getting it (in-store / pickup / delivery), and ranks them by real cost:
  *
- *   effective cost = price + fees + (time until you have it × value of your time)
+ *   real cost = what you pay
+ *             + your time   (hours you spend travelling × value of time)
+ *             + waiting     (days until you have it × patience)
+ *             + risk        (price × 2% unverified stock, 3% cross-border, 10% per star under 4.0)
  *
- * so a slightly pricier item you can have in 5 minutes can beat a cheaper one
- * that ships in 6 days, and vice versa.
+ * The list still shows the price you pay; real cost only decides the order.
  */
 import { distanceKm, fromUSD, toUSD } from './geo';
-import { OFFERS, PRODUCTS, storeById } from './seed';
+import { OFFERS, PRODUCTS, STORES, storeById } from './seed';
 import type { Currency, LatLng, Mode, Offer, Product, Store } from './types';
+
+export type Preset = 'cheapest' | 'balanced' | 'soonest';
+
+export const PRESETS: Record<Preset, { valueOfTime: number; patience: number }> = {
+  cheapest: { valueOfTime: 0, patience: 0 },
+  balanced: { valueOfTime: 20, patience: 3 },
+  soonest: { valueOfTime: 60, patience: 30 },
+};
 
 export type SortKey = 'best' | 'price' | 'eta' | 'rating' | 'distance';
 
@@ -26,9 +36,13 @@ export interface SearchParams {
   /** only show what can be had today */
   urgent?: boolean;
   currency?: Currency;
-  /** dollars per hour of waiting, used by the "best" ranking */
+  /** Cheapest (0, 0), Balanced (20 $/h, 3 $/day) or Soonest (60, 30); overrides below win */
+  preset?: Preset;
   valueOfTimeUSDPerHour?: number;
+  patienceUSDPerDay?: number;
   limit?: number;
+  /** the shopper's country, for the cross-border risk term */
+  fromCountry?: string;
 }
 
 export interface OfferOption {
@@ -38,6 +52,9 @@ export interface OfferOption {
   storeVerified: boolean;
   storeCity: string;
   storeKind: Store['kind'];
+  storeCountry: string;
+  /** one-way travel time to the store */
+  travelMinutes?: number;
   mode: Mode;
   distanceKm: number;
   etaMinutes: number;
@@ -106,6 +123,7 @@ export function optionsForOffer(offer: Offer, from: LatLng, currency: Currency =
     storeVerified: store.verified,
     storeCity: store.city,
     storeKind: store.kind,
+    storeCountry: store.country,
     distanceKm: Math.round(km * 10) / 10,
     rating: store.rating,
     stock: offer.stock,
@@ -139,17 +157,21 @@ export function optionsForOffer(offer: Offer, from: LatLng, currency: Currency =
       } else continue;
     }
     const total = fromUSD(toUSD(offer.price + fee, store.currency), currency);
-    out.push({ ...base, mode, etaMinutes: Math.round(eta), fee: Math.round(fee * 100) / 100, total: Math.round(total * 100) / 100 });
+    out.push({ ...base, mode, travelMinutes: Math.round(travelMin), etaMinutes: Math.round(eta), fee: Math.round(fee * 100) / 100, total: Math.round(total * 100) / 100 });
   }
   return out;
 }
 
-function scoreOption(o: OfferOption, vot: number): number {
-  const totalUSD = toUSD(o.total, o.currency);
-  // Waiting is discounted after the first day: nobody values a 7-day wait at 168 working hours.
-  const hours = o.etaMinutes / 60;
-  const waitHours = Math.min(hours, 24) + Math.max(0, hours - 24) * 0.05;
-  return totalUSD + waitHours * vot - (o.rating - 4) * 0.5;
+function scoreOption(o: OfferOption, valueOfTime: number, patience: number, from: string | undefined): number {
+  const pay = toUSD(o.total, o.currency);
+  // time you actually spend: the round trip for in-store and pickup
+  const activeHours = o.mode === 'delivery' ? 0 : ((o.travelMinutes ?? 0) * 2) / 60;
+  const waitDays = o.etaMinutes / (60 * 24);
+  let riskRate = 0;
+  if (!o.inventoryVerified) riskRate += 0.02;
+  if (from && o.storeCountry !== from) riskRate += 0.03;
+  if (o.rating < 4) riskRate += 0.1 * (4 - o.rating);
+  return pay + activeHours * valueOfTime + waitDays * patience + pay * riskRate;
 }
 
 const sorters: Record<SortKey, (a: OfferOption, b: OfferOption) => number> = {
@@ -159,6 +181,18 @@ const sorters: Record<SortKey, (a: OfferOption, b: OfferOption) => number> = {
   rating: (a, b) => b.rating - a.rating || a.score - b.score,
   distance: (a, b) => a.distanceKm - b.distanceKm || a.score - b.score,
 };
+
+/** Best guess of the shopper's country: the country of the closest physical store. */
+export function countryNear(p: LatLng): string {
+  let best = STORES[0];
+  let bestKm = Infinity;
+  for (const s of STORES) {
+    if (s.kind !== 'physical') continue;
+    const km = distanceKm(p, s);
+    if (km < bestKm) [best, bestKm] = [s, km];
+  }
+  return best.country;
+}
 
 export function search(params: SearchParams): ProductResult[] {
   const {
@@ -171,7 +205,10 @@ export function search(params: SearchParams): ProductResult[] {
     maxPriceUSD,
     urgent,
     currency = 'USD',
-    valueOfTimeUSDPerHour = 8,
+    preset = 'balanced',
+    valueOfTimeUSDPerHour = PRESETS[preset].valueOfTime,
+    patienceUSDPerDay = PRESETS[preset].patience,
+    fromCountry = countryNear(params.location),
     limit = 30,
   } = params;
 
@@ -193,7 +230,7 @@ export function search(params: SearchParams): ProductResult[] {
         (!urgent || o.etaMinutes <= 12 * 60),
     );
     if (options.length === 0) continue;
-    options.forEach((o) => (o.score = scoreOption(o, valueOfTimeUSDPerHour)));
+    options.forEach((o) => (o.score = scoreOption(o, valueOfTimeUSDPerHour, patienceUSDPerDay, fromCountry)));
     options.sort(sorters[sort]);
     results.push({ product: p, best: options[0], modes: available, options, relevance: s });
   }

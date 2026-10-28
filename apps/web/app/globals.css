@@ -30,7 +30,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .badges { display: inline-flex; }
 .badges span { width: 20px; height: 20px; border: 1px solid var(--black); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; margin-left: -1px; }
 .badges span.off { background: var(--red-soft); color: var(--muted); }
-.badges span.on { background: var(--black); color: var(--white); }
+.badges span.on { background: #ffe14d; }
 form.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
 input, select, button { font: inherit; height: 38px; border: 1px solid var(--black); border-radius: 4px; padding: 0 10px; background: var(--white); }
 input.search { background: var(--field); font-family: var(--mono); min-width: 260px; }

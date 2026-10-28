@@ -47,13 +47,16 @@ Any Luhn-valid card number works. `4242 4242 4242 4242` succeeds, `4000 0000 000
 
 ## How "optimal" is decided
 
-For each way of getting each matching product, GET computes an effective cost:
+Ranking follows the project's ranking design v1. Every way of getting every matching product is an option (store × in-store/pickup/delivery). After hard filters, options are ordered by real cost:
 
 ```
-price + fees + hours until you have it × value of your time ($8/h by default)
+real cost = what you pay
+          + your time  (round-trip travel hours × value of time)
+          + waiting    (days until you have it × patience)
+          + risk       (price × 2% unverified stock, 3% cross-border, 10% per star under 4.0)
 ```
 
-Waiting beyond a day counts much less than the first day. So from Polanco, AirPods for $292 that are ready in 14 minutes rank above the same AirPods for $165 that ship in 7 days; sort by price to flip that. You can re-sort by price, ETA, rating or distance and filter by in-store, pickup, delivery or "urgent" (today).
+Presets: Cheapest ($0/h, $0/day), Balanced ($20/h, $3/day, the default) and Soonest ($60/h, $30/day). The list shows the price you pay; real cost only decides the order. You can also sort by price, ETA, rating or distance and filter by in-store, pickup, delivery or Urgent. The logic is `packages/shared/src/engine.ts`.
 
 ## Home screen (from the sketches)
 
@@ -61,7 +64,7 @@ Waiting beyond a day counts much less than the first day. So from Polanco, AirPo
 - The globe is always the background: drag to rotate, pinch (or scroll on web) to zoom, tap anywhere to pick a location, tap the pin to zoom into it. The Moon and Mars sit where they really are right now.
 - The floating bar on the left opens Location, Orders and Account. Drag it anywhere; it fades when idle.
 - Search lives at the bottom. Drag it up or tap it to expand. The robot button turns it into the assistant ("barbecue for 8 people"); `a + b + c` searches a bundle.
-- Each result shows the S/P/D availability (black = the chosen option, red = unavailable) and ETA. Tap a result for every option, then GET (buy now) or + (add to that store's cart).
+- Each result shows the S/P/D availability (yellow = recommended, white = available, red = not offered) and ETA. Tap a result for every option, then GET (buy now) or + (add to that store's cart).
 
 ## Next steps
 

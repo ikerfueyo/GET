@@ -9,7 +9,7 @@ export function T({ style, ...rest }: TextProps & { style?: StyleProp<TextStyle>
 
 /**
  * S / P / D availability, as in the Product-Oriented Search Concept:
- * black = the chosen option, outlined = available, red = not available.
+ * yellow = recommended, white = available, red = not offered (ranking design v1).
  */
 export function ModeBadges({ available, chosen, size = 20 }: { available: Record<Mode, boolean>; chosen?: Mode; size?: number }) {
   return (
@@ -24,10 +24,10 @@ export function ModeBadges({ available, chosen, size = 20 }: { available: Record
               styles.badge,
               { width: size, height: size, marginLeft: i ? -1 : 0 },
               !on && { backgroundColor: colors.redSoft },
-              isChosen && { backgroundColor: colors.black },
+              isChosen && { backgroundColor: colors.yellow },
             ]}
           >
-            <T style={[styles.badgeText, { fontSize: size * 0.6 }, isChosen && { color: colors.white }, !on && { color: colors.muted }]}>
+            <T style={[styles.badgeText, { fontSize: size * 0.6 }, !on && { color: colors.muted }]}>
               {MODE_LETTER[m]}
             </T>
           </View>

@@ -14,6 +14,7 @@ import {
   suggest,
   type Currency,
   type Mode,
+  type Preset,
   type SortKey,
 } from '@get/shared';
 import { Persistence, createUserState, type UserState } from './store';
@@ -48,6 +49,7 @@ export function createApp(state: UserState = createUserState(), persistence = ne
         location: { lat, lng },
         modes,
         sort: (req.query.sort as SortKey) ?? 'best',
+        preset: req.query.preset as Preset | undefined,
         maxKm: num(req.query.maxKm),
         minRating: num(req.query.minRating),
         maxPriceUSD: num(req.query.maxPrice),

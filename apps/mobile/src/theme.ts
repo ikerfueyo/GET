@@ -11,6 +11,7 @@ export const colors = {
   hairline: '#D0D0D0',
   muted: '#7A7A7A',
   red: '#E53935',
+  yellow: '#FFE14D', // recommended S/P/D option
   redSoft: '#F7D4D3',
   ocean: '#2D5BC4',
   land: '#2E7D4F',

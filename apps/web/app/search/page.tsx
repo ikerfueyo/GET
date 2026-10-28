@@ -1,23 +1,23 @@
-import { DEFAULT_LOCATIONS, MODES, formatEta, formatMoney, search, type SortKey } from '@get/shared';
+import { DEFAULT_LOCATIONS, MODES, PRESETS, formatEta, formatMoney, search, type Preset, type SortKey } from '@get/shared';
 import { Badges } from '../badges';
 
-type Props = { searchParams: Promise<{ q?: string; loc?: string; sort?: SortKey }> };
+type Props = { searchParams: Promise<{ q?: string; loc?: string; sort?: string }> };
 
 export default async function Search({ searchParams }: Props) {
-  const { q = '', loc = 'loc_here', sort = 'best' } = await searchParams;
+  const { q = '', loc = 'loc_here', sort = 'balanced' } = await searchParams;
   const location = DEFAULT_LOCATIONS.find((l) => l.id === loc) ?? DEFAULT_LOCATIONS[0];
-  const results = q ? search({ query: q, location, sort }) : [];
+  const results = q ? search({ query: q, location, ...(sort in PRESETS ? { preset: sort as Preset } : { sort: sort as SortKey }) }) : [];
   return (
     <>
       <h1>Search</h1>
-      <p className="sub">The same optimal-offer engine the app uses: price + fees + time until you have it.</p>
+      <p className="sub">The same optimal-offer engine the app uses: what you pay + your time + waiting + risk (ranking design v1).</p>
       <form className="filters">
         <input name="q" defaultValue={q} placeholder="Search GET" className="search" autoFocus />
         <select name="loc" defaultValue={location.id}>
           {DEFAULT_LOCATIONS.map((l) => <option key={l.id} value={l.id}>{l.label} · {l.address}</option>)}
         </select>
         <select name="sort" defaultValue={sort}>
-          {['best', 'price', 'eta', 'rating', 'distance'].map((s) => <option key={s}>{s}</option>)}
+          {['cheapest', 'balanced', 'soonest', 'price', 'eta', 'rating', 'distance'].map((s) => <option key={s}>{s}</option>)}
         </select>
         <button type="submit">Search</button>
       </form>
@@ -45,7 +45,7 @@ export default async function Search({ searchParams }: Props) {
                   <td>{formatEta(o.etaMinutes)}</td>
                   <td>{o.storeKind === 'online' ? 'ships' : `${o.distanceKm} km`}</td>
                   <td className="num">{formatMoney(o.total, o.currency)}</td>
-                  <td className="num sub">score {o.score.toFixed(1)}</td>
+                  <td className="num sub">real cost ${o.score.toFixed(0)}</td>
                 </tr>
               ))}
             </tbody>

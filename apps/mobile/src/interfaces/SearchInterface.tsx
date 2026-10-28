@@ -11,12 +11,14 @@ import {
   MODE_LETTER,
   formatEta,
   formatMoney,
+  PRESETS,
   planBundle,
   search,
   suggest,
   type Mode,
   type OfferOption,
   type ProductResult,
+  type Preset,
   type SortKey,
 } from '@get/shared';
 import { BackIcon, CloseIcon, RobotIcon, StarIcon } from '../components/Icons';
@@ -28,9 +30,11 @@ export interface SearchHandle {
   expand: () => void;
 }
 
-const SORTS: { key: SortKey; label: string }[] = [
-  { key: 'best', label: 'Best' },
-  { key: 'price', label: 'Price' },
+// Presets from ranking design v1, then plain sorts
+const SORTS: { key: SortKey | Preset; label: string }[] = [
+  { key: 'cheapest', label: 'Cheapest' },
+  { key: 'balanced', label: 'Balanced' },
+  { key: 'soonest', label: 'Soonest' },
   { key: 'eta', label: 'ETA' },
   { key: 'rating', label: 'Rating' },
 ];
@@ -44,7 +48,7 @@ export const SearchInterface = forwardRef<SearchHandle, { collapsed: number; ful
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const [assistant, setAssistant] = useState(false);
-  const [sort, setSort] = useState<SortKey>('best');
+  const [sort, setSort] = useState<SortKey | Preset>('balanced');
   const [modes, setModes] = useState<Mode[]>([]);
   const [urgent, setUrgent] = useState(false);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
@@ -76,7 +80,7 @@ export const SearchInterface = forwardRef<SearchHandle, { collapsed: number; ful
 
   const isBundle = assistant || query.includes('+');
   const results = useMemo(
-    () => (isBundle || query.trim().length < 2 ? [] : search({ query, location: selected, sort, modes, urgent })),
+    () => (isBundle || query.trim().length < 2 ? [] : search({ query, location: selected, modes, urgent, ...(sort in PRESETS ? { preset: sort as Preset } : { sort: sort as SortKey }) })),
     [query, selected, sort, modes, urgent, isBundle],
   );
   const suggestions = useMemo(() => (expanded && !isBundle ? suggest(query) : []), [query, expanded, isBundle]);
@@ -231,8 +235,8 @@ function ResultRow({ result }: { result: ProductResult }) {
 function OptionRow({ o, best, onGet, onAdd }: { o: OfferOption; best: boolean; onGet: () => void; onAdd: () => void }) {
   return (
     <View style={styles.option}>
-      <View style={[styles.optMode, best && { backgroundColor: colors.black }]}>
-        <T style={[{ fontWeight: '700' }, best && { color: colors.white }]}>{MODE_LETTER[o.mode]}</T>
+      <View style={[styles.optMode, best && { backgroundColor: colors.yellow }]}>
+        <T style={{ fontWeight: '700' }}>{MODE_LETTER[o.mode]}</T>
       </View>
       <View style={{ flex: 1 }}>
         <T style={{ fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
