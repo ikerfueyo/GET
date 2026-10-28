@@ -32,6 +32,16 @@
           "locationWhenInUsePermission": "GET uses your location to find the closest, fastest way to get anything."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2c96f403-f776-4250-b6c6-637972d89a54"
+      }
+    },
+    "owner": "ikerfueyo",
+    "runtimeVersion": "exposdk:58.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/2c96f403-f776-4250-b6c6-637972d89a54"
+    }
   }
 }
