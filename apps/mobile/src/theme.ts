@@ -18,7 +18,11 @@ export const colors = {
   land: '#2E7D4F',
   landStroke: '#256A42',
   ice: '#FFFFFF', // snow and ice on the globe
-  moon: '#F2F2F2',
+  desert: '#C8B27A',
+  air: '#7FB2FF', // atmosphere glow at the limb
+  moon: '#D8D6D0',
+  moonDark: '#141414', // the Moon's night side, faintly lit by the Earth
+  venus: '#FFF6D8',
   mars: '#E5533D',
 };
 
