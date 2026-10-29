@@ -24,7 +24,7 @@ import { colors } from './theme';
 export function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { selected, focusKey, pickLocation, panel, setPanel, toast } = useApp();
+  const { selected, focusKey, panel, setPanel, toast } = useApp();
   const searchRef = useRef<SearchHandle>(null);
 
   const [street, setStreet] = useState(false);
@@ -64,7 +64,6 @@ export function HomeScreen() {
           height={mapHeight}
           selected={selected}
           focus={globeFocus}
-          onPick={(p) => pickLocation(p)}
           onDive={dive}
         />
       </View>
@@ -76,7 +75,6 @@ export function HomeScreen() {
           selected={selected}
           enter={enter}
           focus={{ point: selected, key: focusKey }}
-          onPick={(p) => pickLocation(p)}
           onExit={surface}
         />
       </Animated.View>
