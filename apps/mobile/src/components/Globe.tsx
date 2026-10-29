@@ -1,6 +1,6 @@
 /**
  * HS 1: planet Earth in black space, with the stars where they really are and
- * the Moon, Venus and Mars on their real bearings and phases.
+ * the Moon and Mars on their real bearings and phases.
  * Drag to rotate, pinch (or mouse wheel on web) to zoom, tap the selected pin
  * to zoom into it. Taps elsewhere do nothing: the selected location only
  * changes from the Location Interface. Zooming in past the
@@ -280,28 +280,38 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
     starPaths.get(size)!.push(d);
   }
 
-  // ── the Moon, Venus and Mars ──
+  // ── the Moon and Mars ──
   // Their directions from the Earth and their phases are real, but at true scale
   // they would be specks (the Moon is 30 Earths away), so they are drawn
-  // closer and bigger: the Moon at its true size against the Earth, the two
-  // planets at their true size against each other. Each sits on its real
-  // bearing; when that points away from the viewer it passes behind the globe.
+  // closer and bigger: the Moon at its true size against the Earth, Mars
+  // smaller as it is farther. Each sits on its real bearing; when that points
+  // away from the viewer it passes behind the globe. Zooming in pushes them
+  // out of the picture, so they are gone once the Earth fills the screen.
   const sizeRef = baseR * Math.min(zoom, 1.6); // don't let them balloon when zoomed in
   const bodies = [
     { key: 'moon', pos: sky.moon, dist: 1.5, rad: Math.max(10, sizeRef * MOON_RADIUS), fill: colors.moon },
-    { key: 'venus', pos: sky.venus.pos, dist: 1.85, rad: Math.max(5, sizeRef * 0.1), fill: colors.venus },
     { key: 'mars', pos: sky.mars.pos, dist: 2.05, rad: Math.max(3, sizeRef * 0.053), fill: colors.mars },
   ].map((b) => {
     const u = normalize(b.pos);
     const toSun = normalize([sky.sun[0] - b.pos[0], sky.sun[1] - b.pos[1], sky.sun[2] - b.pos[2]]);
-    const x = cx + b.dist * r * dot(u, R);
-    const y = cy - b.dist * r * dot(u, U);
+    // laid out at the unzoomed scale, kept on screen...
+    const r1 = baseR * Math.min(zoom, 1);
+    const ox = clamp(cx + b.dist * r1 * dot(u, R), b.rad + 4, width - b.rad - 4) - cx;
+    const oy = clamp(cy - b.dist * r1 * dot(u, U), b.rad + 4, height - b.rad - 4) - cy;
+    // ...then, past zoom 1, carried outwards with the Earth and beyond the screen's corners
+    const grow = Math.max(1, zoom);
+    const len = Math.hypot(ox, oy) || 1;
+    const push = (grow - 1) * Math.hypot(width, height) * 0.3;
+    const ux = len > 1 ? ox / len : 0;
+    const uy = len > 1 ? oy / len : -1;
     return {
       ...b,
       u,
-      x: clamp(x, b.rad + 4, width - b.rad - 4),
-      y: clamp(y, b.rad + 4, height - b.rad - 4),
+      x: cx + ox * grow + ux * push,
+      y: cy + oy * grow + uy * push,
       front: dot(u, P) > 0,
+      // hidden behind the globe: must not slide out from behind it while zooming
+      eclipsed: dot(u, P) <= 0 && len + b.rad < r1,
       k: dot(toSun, P), // cos of the phase angle: 1 full, -1 new
       sunAngle: (Math.atan2(-dot(toSun, U), dot(toSun, R)) * 180) / Math.PI,
     };
@@ -357,7 +367,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
         {[...starPaths].map(([size, ds]) => (
           <Path key={size} d={ds.join('')} fill={colors.white} opacity={Math.min(1, 0.35 + size * 0.5)} />
         ))}
-        {bodies.filter((b) => !b.front).map(drawBody)}
+        {bodies.filter((b) => !b.front && !b.eclipsed).map(drawBody)}
 
         <Circle cx={cx} cy={cy} r={r * 1.035} fill="url(#air)" />
         <Circle cx={cx} cy={cy} r={r} fill={colors.ocean} />

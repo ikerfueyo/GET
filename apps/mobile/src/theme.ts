@@ -23,7 +23,6 @@ export const colors = {
   moon: '#D8D6D0',
   moonMaria: '#A9A7A1',
   night: '#141414', // the unlit side of the Moon and planets
-  venus: '#FFF6D8',
   mars: '#E5533D',
 };
 

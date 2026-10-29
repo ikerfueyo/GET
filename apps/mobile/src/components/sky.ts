@@ -1,5 +1,5 @@
 /**
- * Where the Sun, Moon, Venus, Mars and the stars are right now, as vectors in
+ * Where the Sun, Moon, Mars and the stars are right now, as vectors in
  * the Earth-fixed frame (x towards 0°N 0°E, y towards 0°N 90°E, z towards the
  * North Pole), in Earth radii. Low-precision formulas: the Moon from the
  * Astronomical Almanac's short series, the planets from JPL's approximate
@@ -42,10 +42,6 @@ const fromAngles = (lon: number, lat: number, dist = 1): Vec => [
 
 // a, e, I, L, long. of perihelion, long. of node; then their rates per century
 type Elements = [number, number, number, number, number, number, number, number, number, number, number, number];
-const VENUS: Elements = [
-  0.72333566, 0.00677672, 3.39467605, 181.9790995, 131.60246718, 76.67984255,
-  0.0000039, -0.00004107, -0.0007889, 58517.81538729, 0.00268329, -0.27769418,
-];
 const EARTH: Elements = [
   1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0,
   0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0,
@@ -83,7 +79,7 @@ const angleBetween = (a: Vec, b: Vec) =>
   Math.acos(Math.max(-1, Math.min(1, (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (len(a) * len(b)))));
 
 export type Planet = { pos: Vec; mag: number };
-export type Sky = { gmst: number; sun: Vec; moon: Vec; venus: Planet; mars: Planet; marsPole: Vec };
+export type Sky = { gmst: number; sun: Vec; moon: Vec; mars: Planet; marsPole: Vec };
 
 export function skyAt(date: Date): Sky {
   const d = date.getTime() / 86_400_000 - 10957.5; // days since J2000.0
@@ -111,14 +107,13 @@ export function skyAt(date: Date): Sky {
     const phase = deg(angleBetween(helio, geo)); // Sun–planet–Earth angle
     return { pos: toEarth(geo.map((v) => v * AU) as Vec), mag: magnitude(len(helio), len(geo), phase) };
   };
-  // Mallama & Hilton (2018) visual magnitudes
-  const venus = planet(VENUS, (r, D, i) => -4.384 + 5 * Math.log10(r * D) - 1.044e-3 * i + 3.687e-4 * i * i - 2.814e-6 * i ** 3 + 8.938e-9 * i ** 4);
+  // Mallama & Hilton (2018) visual magnitude
   const mars = planet(MARS, (r, D, i) => -1.601 + 5 * Math.log10(r * D) + 2.267e-2 * i - 1.302e-4 * i * i);
 
   // Mars' north pole points at RA 317.68°, Dec 52.89° (IAU)
   const marsPole = eqToEarth(fromAngles(rad(317.68), rad(52.89)), gmst);
 
-  return { gmst, sun: toEarth(earth.map((v) => -v * AU) as Vec), moon, venus, mars, marsPole };
+  return { gmst, sun: toEarth(earth.map((v) => -v * AU) as Vec), moon, mars, marsPole };
 }
 
 /** the Bright Star Catalogue down to magnitude 5.5 (≈2,850 stars), as [ra°, dec°, mag] */
