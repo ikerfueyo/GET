@@ -83,7 +83,7 @@ const angleBetween = (a: Vec, b: Vec) =>
   Math.acos(Math.max(-1, Math.min(1, (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (len(a) * len(b)))));
 
 export type Planet = { pos: Vec; mag: number };
-export type Sky = { gmst: number; sun: Vec; moon: Vec; venus: Planet; mars: Planet };
+export type Sky = { gmst: number; sun: Vec; moon: Vec; venus: Planet; mars: Planet; marsPole: Vec };
 
 export function skyAt(date: Date): Sky {
   const d = date.getTime() / 86_400_000 - 10957.5; // days since J2000.0
@@ -115,7 +115,10 @@ export function skyAt(date: Date): Sky {
   const venus = planet(VENUS, (r, D, i) => -4.384 + 5 * Math.log10(r * D) - 1.044e-3 * i + 3.687e-4 * i * i - 2.814e-6 * i ** 3 + 8.938e-9 * i ** 4);
   const mars = planet(MARS, (r, D, i) => -1.601 + 5 * Math.log10(r * D) + 2.267e-2 * i - 1.302e-4 * i * i);
 
-  return { gmst, sun: toEarth(earth.map((v) => -v * AU) as Vec), moon, venus, mars };
+  // Mars' north pole points at RA 317.68°, Dec 52.89° (IAU)
+  const marsPole = eqToEarth(fromAngles(rad(317.68), rad(52.89)), gmst);
+
+  return { gmst, sun: toEarth(earth.map((v) => -v * AU) as Vec), moon, venus, mars, marsPole };
 }
 
 /** the Bright Star Catalogue down to magnitude 5.5 (≈2,850 stars), as [ra°, dec°, mag] */

@@ -21,7 +21,8 @@ export const colors = {
   desert: '#C8B27A',
   air: '#7FB2FF', // atmosphere glow at the limb
   moon: '#D8D6D0',
-  moonDark: '#141414', // the Moon's night side, faintly lit by the Earth
+  moonMaria: '#A9A7A1',
+  night: '#141414', // the unlit side of the Moon and planets
   venus: '#FFF6D8',
   mars: '#E5533D',
 };

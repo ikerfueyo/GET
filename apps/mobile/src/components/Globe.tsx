@@ -1,15 +1,14 @@
 /**
- * HS 1: planet Earth in black space, with the stars, the Moon, Venus and Mars
- * where they really are, at their true sizes and distances.
+ * HS 1: planet Earth in black space, with the stars where they really are and
+ * the Moon, Venus and Mars on their real bearings and phases.
  * Drag to rotate, pinch (or mouse wheel on web) to zoom, tap the selected pin
  * to zoom into it. Taps elsewhere do nothing: the selected location only
  * changes from the Location Interface. Zooming in past the
  * globe's closest view (or tapping the pin) dives into the street map, HS 2.
  *
  * Drawn with d3-geo's orthographic projection into react-native-svg so it
- * runs in Expo Go and on the web without native 3D. The sky around it is seen
- * from a perspective camera floating above the point at the centre, far
- * enough out that the Earth's silhouette matches the drawn globe.
+ * runs in Expo Go and on the web without native 3D. The stars are seen through
+ * a perspective camera floating above the point at the centre.
  */
 import { geoDistance, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -67,6 +66,17 @@ const unit = (lat: number, lng: number): Vec => [
   Math.cos(rad(lat)) * Math.cos(rad(lng)),
   Math.cos(rad(lat)) * Math.sin(rad(lng)),
   Math.sin(rad(lat)),
+];
+// the Moon's maria as seen from the Earth, north up: [x, y, rx, ry] in Moon radii
+const MARIA: [number, number, number, number][] = [
+  [-0.55, 0.15, 0.27, 0.45], // Oceanus Procellarum
+  [-0.25, 0.48, 0.24, 0.2], // Imbrium
+  [0.2, 0.45, 0.14, 0.13], // Serenitatis
+  [0.36, 0.14, 0.17, 0.15], // Tranquillitatis
+  [0.72, 0.3, 0.09, 0.08], // Crisium
+  [0.6, -0.12, 0.11, 0.13], // Fecunditatis
+  [-0.18, -0.36, 0.15, 0.12], // Nubium
+  [-0.5, -0.42, 0.09, 0.08], // Humorum
 ];
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
@@ -241,26 +251,22 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
         }
       : {};
 
-  // ── the sky, through a perspective camera above the centre point ──
+  // ── the stars, through a camera above the centre point ──
   // focal length: about 70° of view across the screen's long side
   const focal = Math.max(width, height) / 2 / Math.tan(rad(35));
-  // camera distance (Earth radii) at which the Earth's silhouette is r px
-  const camDist = Math.sqrt(1 + (focal / r) ** 2);
   const sky = useMemo(() => skyAt(now), [now]);
   const stars = useMemo(() => starsAt(sky.gmst), [sky]);
   const P = unit(center[1], center[0]);
   const F: Vec = [-P[0], -P[1], -P[2]]; // looking down at the Earth
   const U = normalize([-F[2] * F[0], -F[2] * F[1], 1 - F[2] * F[2]]); // north, square to the view
   const R = cross(F, U);
-  const cam: Vec = [P[0] * camDist, P[1] * camDist, P[2] * camDist];
-  /** screen position of a direction (or, with `point`, a position in Earth radii) */
-  const toScreen = (v: Vec, point = false) => {
-    const w: Vec = point ? [v[0] - cam[0], v[1] - cam[1], v[2] - cam[2]] : v;
-    const z = dot(w, F);
+  /** screen position of a direction in the sky, if it is on screen */
+  const toScreen = (v: Vec) => {
+    const z = dot(v, F);
     if (z <= 0) return null;
-    const x = cx + (focal * dot(w, R)) / z;
-    const y = cy - (focal * dot(w, U)) / z;
-    return x < -8 || x > width + 8 || y < -8 || y > height + 8 ? null : { x, y, dist: Math.hypot(...w) };
+    const x = cx + (focal * dot(v, R)) / z;
+    const y = cy - (focal * dot(v, U)) / z;
+    return x < -8 || x > width + 8 || y < -8 || y > height + 8 ? null : { x, y };
   };
 
   // stars drawn as a handful of paths, one per size, rather than thousands of circles
@@ -274,30 +280,63 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
     starPaths.get(size)!.push(d);
   }
 
-  // the Moon: true size, lit from the Sun's side
-  const moonP = toScreen(sky.moon, true);
-  let moonEl = null;
-  if (moonP) {
-    const mr = Math.max(0.8, (focal * MOON_RADIUS) / moonP.dist);
-    const toSun = normalize([sky.sun[0] - sky.moon[0], sky.sun[1] - sky.moon[1], sky.sun[2] - sky.moon[2]]);
-    const toCam = normalize([cam[0] - sky.moon[0], cam[1] - sky.moon[1], cam[2] - sky.moon[2]]);
-    const k = dot(toSun, toCam); // cos of the phase angle: 1 full, -1 new
-    const step = moonP.dist * 0.01;
-    const lit = toScreen([sky.moon[0] + toSun[0] * step, sky.moon[1] + toSun[1] * step, sky.moon[2] + toSun[2] * step], true);
-    const angle = lit ? Math.atan2(lit.y - moonP.y, lit.x - moonP.x) * (180 / Math.PI) : 0;
-    const litD = `M0,${-mr}A${mr},${mr} 0 0,1 0,${mr}A${Math.abs(k) * mr},${mr} 0 0,${k > 0 ? 1 : 0} 0,${-mr}Z`;
-    moonEl = (
-      <G transform={`translate(${moonP.x},${moonP.y}) rotate(${angle})`}>
-        <Circle r={mr} fill={colors.moonDark} />
-        <Path d={litD} fill={colors.moon} />
+  // ── the Moon, Venus and Mars ──
+  // Their directions from the Earth and their phases are real, but at true scale
+  // they would be specks (the Moon is 30 Earths away), so they are drawn
+  // closer and bigger: the Moon at its true size against the Earth, the two
+  // planets at their true size against each other. Each sits on its real
+  // bearing; when that points away from the viewer it passes behind the globe.
+  const sizeRef = baseR * Math.min(zoom, 1.6); // don't let them balloon when zoomed in
+  const bodies = [
+    { key: 'moon', pos: sky.moon, dist: 1.5, rad: Math.max(10, sizeRef * MOON_RADIUS), fill: colors.moon },
+    { key: 'venus', pos: sky.venus.pos, dist: 1.85, rad: Math.max(5, sizeRef * 0.1), fill: colors.venus },
+    { key: 'mars', pos: sky.mars.pos, dist: 2.05, rad: Math.max(3, sizeRef * 0.053), fill: colors.mars },
+  ].map((b) => {
+    const u = normalize(b.pos);
+    const toSun = normalize([sky.sun[0] - b.pos[0], sky.sun[1] - b.pos[1], sky.sun[2] - b.pos[2]]);
+    const x = cx + b.dist * r * dot(u, R);
+    const y = cy - b.dist * r * dot(u, U);
+    return {
+      ...b,
+      u,
+      x: clamp(x, b.rad + 4, width - b.rad - 4),
+      y: clamp(y, b.rad + 4, height - b.rad - 4),
+      front: dot(u, P) > 0,
+      k: dot(toSun, P), // cos of the phase angle: 1 full, -1 new
+      sunAngle: (Math.atan2(-dot(toSun, U), dot(toSun, R)) * 180) / Math.PI,
+    };
+  });
+
+  /** the sunlit part of a disc of radius `m` lit from +x; k = cos(phase angle) */
+  const litPath = (m: number, k: number) =>
+    `M0,${-m}A${m},${m} 0 0,1 0,${m}A${Math.abs(k) * m},${m} 0 0,${k > 0 ? 1 : 0} 0,${-m}Z`;
+
+  const drawBody = (b: (typeof bodies)[number]) => {
+    let surface = null;
+    if (b.key === 'moon') {
+      // the dark maria of the near side, which faces the viewer when the Moon is behind the Earth
+      const near = clamp(-dot(b.u, P) * 1.6, 0, 1);
+      surface = near > 0 && (
+        <G opacity={near}>
+          {MARIA.map(([mx, my, rx, ry], i) => (
+            <Ellipse key={i} cx={mx * b.rad} cy={-my * b.rad} rx={rx * b.rad} ry={ry * b.rad} fill={colors.moonMaria} />
+          ))}
+        </G>
+      );
+    } else if (b.key === 'mars') {
+      // the polar cap that leans towards the viewer
+      const pole = dot(sky.marsPole, P) >= 0 ? sky.marsPole : (sky.marsPole.map((v) => -v) as Vec);
+      surface = (
+        <Circle cx={0.66 * b.rad * dot(pole, R)} cy={-0.66 * b.rad * dot(pole, U)} r={0.32 * b.rad} fill={colors.ice} />
+      );
+    }
+    return (
+      <G key={b.key} transform={`translate(${b.x},${b.y})`}>
+        <Circle r={b.rad} fill={b.fill} />
+        {surface}
+        <Path d={litPath(b.rad, -b.k)} fill={colors.night} opacity={0.94} transform={`rotate(${b.sunAngle + 180})`} />
       </G>
     );
-  }
-
-  // Venus and Mars are far too small to show a disc: points of light, sized by brightness
-  const planet = (pl: { pos: Vec; mag: number }, fill: string, key: string) => {
-    const p = toScreen(pl.pos, true);
-    return p ? <Circle key={key} cx={p.x} cy={p.y} r={dotRadius(pl.mag)} fill={fill} /> : null;
   };
 
   return (
@@ -318,9 +357,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
         {[...starPaths].map(([size, ds]) => (
           <Path key={size} d={ds.join('')} fill={colors.white} opacity={Math.min(1, 0.35 + size * 0.5)} />
         ))}
-        {planet(sky.venus, colors.venus, 'venus')}
-        {planet(sky.mars, colors.mars, 'mars')}
-        {moonEl}
+        {bodies.filter((b) => !b.front).map(drawBody)}
 
         <Circle cx={cx} cy={cy} r={r * 1.035} fill="url(#air)" />
         <Circle cx={cx} cy={cy} r={r} fill={colors.ocean} />
@@ -338,6 +375,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
           </G>
         )}
 
+        {bodies.filter((b) => b.front).map(drawBody)}
       </Svg>
     </View>
   );
