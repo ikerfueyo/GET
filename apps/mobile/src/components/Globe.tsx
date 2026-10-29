@@ -31,6 +31,7 @@ import {
 import { geoDistance, geoOrthographic } from 'd3-geo';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import type { LatLng } from '@get/shared';
 import { colors } from '../theme';
 import { MOON_RADIUS, dotRadius, skyAt, starsAt, type Vec } from './sky';
@@ -73,6 +74,8 @@ half4 main(float2 xy) {
   float edge = clamp((1.0 - sqrt(d2)) * radius, 0.0, 1.0);
   return half4(c.rgb, 1.0) * edge;
 }`)!;
+
+const PIN_BOX = 24;
 
 const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 
@@ -473,20 +476,27 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
           />
         </Circle>
 
-        {pin && (
-          <Group>
-            <Oval x={pin[0] - 7} y={pin[1] + 13 - 2.5} width={14} height={5} color="#000" opacity={0.35} />
-            <Circle cx={pin[0]} cy={pin[1]} r={11} color={colors.red} />
-            <Circle cx={pin[0]} cy={pin[1]} r={4.6} color={colors.white} />
-          </Group>
-        )}
+        {pin && <Oval x={pin[0] - 7} y={pin[1] + 13 - 2.5} width={14} height={5} color="#000" opacity={0.35} />}
 
         {bodies.filter((b) => b.front).map(drawBody)}
       </Canvas>
+      {/* the pin is a small SVG over the canvas, so it can share its icon drawings with the rest of the app */}
+      {pin && (
+        <Svg
+          width={PIN_BOX}
+          height={PIN_BOX}
+          style={[styles.pin, { left: pin[0] - PIN_BOX / 2, top: pin[1] - PIN_BOX / 2 }]}
+          pointerEvents="none"
+        >
+          <SvgCircle cx={PIN_BOX / 2} cy={PIN_BOX / 2} r={11} fill={colors.red} />
+          <SvgCircle cx={PIN_BOX / 2} cy={PIN_BOX / 2} r={4.6} fill={colors.white} />
+        </Svg>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { backgroundColor: colors.black, overflow: 'hidden' },
+  pin: { position: 'absolute' },
 });
