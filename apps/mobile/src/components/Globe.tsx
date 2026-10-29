@@ -85,7 +85,21 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
   // rotation is [-lng, -lat] of the point facing the viewer
   const view = useRef({ lambda: -selected.lng, phi: -clamp(selected.lat, -60, 60), zoom: 1 });
   const [, setFrame] = useState(0);
-  const redraw = () => setFrame((f) => (f + 1) % 1_000_000);
+  // touches can arrive faster than the screen refreshes: draw at most once per frame
+  const frameReq = useRef<number | null>(null);
+  const redraw = () => {
+    if (frameReq.current !== null) return;
+    frameReq.current = requestAnimationFrame(() => {
+      frameReq.current = null;
+      setFrame((f) => (f + 1) % 1_000_000);
+    });
+  };
+  useEffect(
+    () => () => {
+      if (frameReq.current !== null) cancelAnimationFrame(frameReq.current);
+    },
+    [],
+  );
   const anim = useRef<number | null>(null);
   const [now, setNow] = useState(() => new Date());
 
