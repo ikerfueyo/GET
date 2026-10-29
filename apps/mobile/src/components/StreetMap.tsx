@@ -17,7 +17,7 @@ import Svg, { Circle, Ellipse, G, Path, Text as SvgText } from 'react-native-svg
 import type { LatLng } from '@get/shared';
 import { colors, fonts } from '../theme';
 import { T } from './ui';
-import { ATTRIBUTION, ROADS, TILE_MAX_ZOOM, fromWorld, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
+import { ATTRIBUTION, BUILDINGS_ZOOM, ROADS, TILE_MAX_ZOOM, fromWorld, getBuildings, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
 
 const TILE = 512; // screen px of a tile at its own zoom, as in MapLibre
 const MIN_ZOOM = 2;
@@ -27,6 +27,9 @@ const PIN_ZOOM = 16;
 /** the satellite view gives way to the black-and-white streets between these */
 const STREETS_FROM = 14.4;
 const STREETS_FULL = 15.4;
+/** building footprints fade in between these, under the streets */
+const BUILDINGS_FROM = 15.6;
+const BUILDINGS_FULL = 16.4;
 
 const SATELLITE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
 const SAT_MAX_ZOOM = 18;
@@ -129,8 +132,8 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   const g = useRef({ mode: 'none' as Mode, base: view.current, dx0: 0, dy0: 0, d0: 0, wp: { x: 0, y: 0 }, t: 0, moved: false });
   const touchesOf = (e: GestureResponderEvent) => e.nativeEvent.touches ?? [];
 
-  const latest = useRef({ width, height, onExit });
-  latest.current = { width, height, onExit };
+  const latest = useRef({ width, height, onExit, selected });
+  latest.current = { width, height, onExit, selected };
 
   const screenToWorld = (sx: number, sy: number, v: View2 = view.current) => {
     const W = worldPx(v.zoom);
@@ -185,7 +188,23 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           redraw();
         },
         onPanResponderRelease: (e, gs) => {
-          if (!g.current.moved) return; // a tap; the selected location only changes from the Location Interface
+          if (!g.current.moved) {
+            // a tap: on the red pin it flies down to the streets; anywhere else it does
+            // nothing, since the selected location only changes from the Location Interface
+            const sel = latest.current.selected;
+            const p = toWorld(sel.lng, sel.lat);
+            const W = worldPx(view.current.zoom);
+            const { width: w, height: h } = latest.current;
+            let dx = (p.x - view.current.x) * W;
+            if (dx > W / 2) dx -= W;
+            if (dx < -W / 2) dx += W;
+            const px = w / 2 + dx;
+            const py = h / 2 + (p.y - view.current.y) * W;
+            if (Math.hypot(e.nativeEvent.locationX - px, e.nativeEvent.locationY - py) < 28) {
+              animate({ ...p, zoom: Math.max(PIN_ZOOM, view.current.zoom) }, 1400);
+            }
+            return;
+          }
           if (view.current.zoom < exitBelow.current) return exit();
           if (g.current.mode !== 'pan') return;
           // a little inertia after a flick
@@ -242,11 +261,12 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   const y0 = Math.max(0, Math.floor(cyT - height / 2 / ts));
   const y1 = Math.min(n - 1, Math.floor(cyT + height / 2 / ts));
 
-  type Placed = { key: string; tile: TileData; ox: number; oy: number; s: number };
+  type Placed = { key: string; tile: TileData; ox: number; oy: number; s: number; buildings?: string };
   const below: Placed[] = []; // coarser tiles standing in while the right ones load
   const tiles: Placed[] = [];
   const seen = new Set<string>();
   const streets = clamp((zoom - STREETS_FROM) / (STREETS_FULL - STREETS_FROM), 0, 1);
+  const buildings = clamp((zoom - BUILDINGS_FROM) / (BUILDINGS_FULL - BUILDINGS_FROM), 0, 1);
   if (enter.key && streets > 0) {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
@@ -254,7 +274,9 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
         const oy = height / 2 + (ty - cyT) * ts;
         const t = getTile(tz, ((tx % n) + n) % n, ty);
         if (t) {
-          tiles.push({ key: `${tz}/${tx}/${ty}`, tile: t, ox, oy, s: ts / t.extent });
+          // Overture's footprints where loaded, OpenStreetMap's own until then
+          const b = buildings > 0 && tz === BUILDINGS_ZOOM ? getBuildings(tz, ((tx % n) + n) % n, ty) : undefined;
+          tiles.push({ key: `${tz}/${tx}/${ty}`, tile: t, ox, oy, s: ts / t.extent, buildings: b ?? t.buildings });
           continue;
         }
         for (let k = 1; k <= 4 && tz - k >= 0; k++) {
@@ -275,9 +297,13 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
     }
   }
 
-  const drawTile = ({ key, tile, ox, oy, s }: Placed) => (
+  const drawTile = ({ key, tile, ox, oy, s, buildings: b = tile.buildings }: Placed) => (
     <G key={key} transform={`translate(${ox} ${oy}) scale(${s})`}>
       {!!tile.water && <Path d={tile.water} fill={colors.field} />}
+      {!!b && buildings > 0 && (
+        // fill only: an outline would also trace where buildings are cut at tile edges
+        <Path d={b} fill="#E4E4E4" opacity={buildings} />
+      )}
       {ROADS.slice()
         .reverse()
         .map((r) =>
