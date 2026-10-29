@@ -4,9 +4,10 @@
  * (AsyncStorage, salted SHA-256 passwords) so the demo works without a backend.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient, type SupabaseClient, type User as SupabaseUser } from '@supabase/supabase-js';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import * as Crypto from 'expo-crypto';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { supabase } from '../supabase';
 
 export interface User {
   id: string;
@@ -25,16 +26,6 @@ interface Auth {
   signUp: (name: string, email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
 }
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-const supabase: SupabaseClient | null =
-  SUPABASE_URL && SUPABASE_ANON_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
-      })
-    : null;
 
 const fromSupabase = (u: SupabaseUser): User => ({
   id: u.id,

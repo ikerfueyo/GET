@@ -120,20 +120,29 @@ function GetCash() {
 
 function Personal() {
   const { user, backend } = useAuth();
-  const prefill: Record<string, string | undefined> = { Name: user?.name, Email: user?.email };
+  const { profile, updateProfile } = useApp();
+  const [name, setName] = useState(profile.fullName || user?.name || '');
+  const [username, setUsername] = useState(profile.username);
+  const [phone, setPhone] = useState(profile.phone);
+  // saved when you leave a field
+  const field = (placeholder: string, value: string, set: (v: string) => void, save: () => void, extra?: object) => (
+    <TextInput
+      style={styles.input}
+      placeholder={placeholder}
+      placeholderTextColor={colors.muted}
+      value={value}
+      onChangeText={set}
+      onBlur={save}
+      {...extra}
+    />
+  );
   return (
     <View style={{ gap: 8 }}>
-      {['Name', 'Username', 'Phone', 'Email'].map((f) => (
-        <TextInput
-          key={f}
-          style={[styles.input, f === 'Email' && { color: colors.muted }]}
-          placeholder={f}
-          placeholderTextColor={colors.muted}
-          defaultValue={prefill[f]}
-          editable={f !== 'Email'}
-        />
-      ))}
-      <T style={styles.sub}>{backend === 'supabase' ? 'Signed in with GET (Supabase Auth).' : 'Demo account saved on this phone only.'}</T>
+      {field('Name', name, setName, () => name.trim() !== profile.fullName && updateProfile({ fullName: name.trim() }))}
+      {field('Username', username, setUsername, () => username.trim() !== profile.username && updateProfile({ username: username.trim() }), { autoCapitalize: 'none' })}
+      {field('Phone', phone, setPhone, () => phone.trim() !== profile.phone && updateProfile({ phone: phone.trim() }), { keyboardType: 'phone-pad' })}
+      <TextInput style={[styles.input, { color: colors.muted }]} value={user?.email ?? ''} editable={false} />
+      <T style={styles.sub}>{backend === 'supabase' ? 'Saved to your GET account.' : 'Demo account saved on this phone only.'}</T>
     </View>
   );
 }

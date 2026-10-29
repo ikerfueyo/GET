@@ -1,5 +1,5 @@
 import * as Location from 'expo-location';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   CheckoutError,
   DEFAULT_LOCATIONS,
@@ -20,6 +20,8 @@ import {
   type SavedLocation,
 } from '@get/shared';
 import { postCheckout } from '../api';
+import { useAuth } from './Auth';
+import * as remote from './remote';
 
 export interface CartLine {
   offerId: string;
@@ -75,6 +77,9 @@ interface AppState {
   addCard: (input: NewCardInput) => string | null;
   getCashUSD: number;
 
+  profile: remote.Profile;
+  updateProfile: (patch: Partial<Omit<remote.Profile, 'getCashUSD'>>) => void;
+
   toast: string | null;
   showToast: (msg: string) => void;
 }
@@ -84,13 +89,17 @@ const Ctx = createContext<AppState | null>(null);
 const STARBUCKS_CROISSANT = OFFERS.find((o) => o.storeId === 'store_starbucks-chapel-st' && o.productId.includes('croissant'));
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
+  const { user, backend } = useAuth();
+  // signed in with Supabase: the account lives in the database, otherwise in memory with demo data
+  const remoteUserId = backend === 'supabase' ? user?.id : undefined;
+  const [ready, setReady] = useState(!remoteUserId);
   const [locations, setLocations] = useState<SavedLocation[]>(DEFAULT_LOCATIONS);
   const [picked, setPicked] = useState<SavedLocation | null>(null);
   const [selectedId, setSelectedId] = useState('loc_here');
   const [focusKey, setFocusKey] = useState(0);
   const [panel, setPanel] = useState<Panel>(null);
-  const [carts, setCarts] = useState<Cart[]>(() =>
-    STARBUCKS_CROISSANT
+  const [carts, setCartsState] = useState<Cart[]>(() =>
+    STARBUCKS_CROISSANT && !remoteUserId
       ? [{ id: 'cart_demo', storeId: STARBUCKS_CROISSANT.storeId, mode: 'in_store', lines: [{ offerId: STARBUCKS_CROISSANT.id, quantity: 1 }], updatedAt: Date.now() }]
       : [],
   );
@@ -107,12 +116,65 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(DEMO_PAYMENT_METHODS);
   const [defaultPaymentId, setDefaultPayment] = useState(DEMO_PAYMENT_METHODS[0].id);
   const [getCashUSD, setGetCash] = useState(DEMO_GET_CASH_USD);
+  const [profile, setProfile] = useState<remote.Profile>({ fullName: user?.name ?? '', username: '', phone: '', getCashUSD: DEMO_GET_CASH_USD });
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast((t) => (t === msg ? null : t)), 3200);
   }, []);
+
+  // cart edits are computed from the latest carts so the same value can be saved
+  const cartsRef = useRef(carts);
+  const setCarts = (next: Cart[]) => {
+    cartsRef.current = next;
+    setCartsState(next);
+  };
+
+  // database writes run one at a time, in the order they were made
+  const queue = useRef(Promise.resolve());
+  const persist = (write: (userId: string) => Promise<unknown>) => {
+    if (!remoteUserId) return;
+    const userId = remoteUserId;
+    queue.current = queue.current
+      .then(() => write(userId))
+      .then(
+        () => undefined,
+        (e) => {
+          console.warn('Supabase write failed', e);
+          showToast('Could not save that to your account.');
+        },
+      );
+  };
+
+  useEffect(() => {
+    if (!remoteUserId) return;
+    let live = true;
+    (async () => {
+      try {
+        await remote.catalogReady();
+        const a = await remote.loadAccount(remoteUserId, user?.name ?? '');
+        if (!live) return;
+        // keep "Here" as GPS already set it
+        setLocations((ls) => [ls.find((l) => l.id === 'loc_here') ?? a.locations[0], ...a.locations.slice(1)]);
+        setPaymentMethods(a.paymentMethods);
+        setDefaultPayment(a.defaultPaymentId);
+        setGetCash(a.profile.getCashUSD);
+        setProfile(a.profile);
+        setCarts(a.carts);
+        setOrders(a.orders);
+      } catch (e) {
+        console.warn('Could not load the account', e);
+        if (live) showToast('Could not load your account. Changes may not be saved.');
+      } finally {
+        if (live) setReady(true);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteUserId]);
 
   // "Here" follows the phone's GPS when the user allows it.
   useEffect(() => {
@@ -148,51 +210,66 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const saveLocation = (loc: Omit<SavedLocation, 'id'>) => {
     // "Add" places the location at the far right and does not select it
-    setLocations((ls) => [...ls, { ...loc, id: `loc_${Date.now()}` }]);
+    const saved = { ...loc, id: remote.newId() };
+    const position = locations.length;
+    setLocations((ls) => [...ls, saved]);
+    persist((uid) => remote.insertLocation(uid, saved, position));
   };
 
   const addToCart = (offerId: string, mode: Mode) => {
     const offer = OFFERS.find((o) => o.id === offerId);
     if (!offer) return;
-    setCarts((cs) => {
-      const existing = cs.find((c) => c.storeId === offer.storeId);
-      if (!existing) {
-        return [{ id: `cart_${Date.now()}`, storeId: offer.storeId, mode, lines: [{ offerId, quantity: 1 }], updatedAt: Date.now() }, ...cs];
-      }
+    const cs = cartsRef.current;
+    const existing = cs.find((c) => c.storeId === offer.storeId);
+    let cart: Cart;
+    if (!existing) {
+      cart = { id: remote.newId(), storeId: offer.storeId, mode, lines: [{ offerId, quantity: 1 }], updatedAt: Date.now() };
+    } else {
       const lines = existing.lines.some((l) => l.offerId === offerId)
         ? existing.lines.map((l) => (l.offerId === offerId ? { ...l, quantity: l.quantity + 1 } : l))
         : [...existing.lines, { offerId, quantity: 1 }];
-      // carts are ordered by last edit
-      return [{ ...existing, lines, updatedAt: Date.now() }, ...cs.filter((c) => c !== existing)];
-    });
+      cart = { ...existing, lines, updatedAt: Date.now() };
+    }
+    // carts are ordered by last edit
+    setCarts([cart, ...cs.filter((c) => c !== existing)]);
+    persist((uid) => remote.saveCart(uid, cart));
     showToast(`Added to ${storeById.get(offer.storeId)?.name} cart`);
   };
 
+  const editCart = (cartId: string, edit: (c: Cart) => Cart) => {
+    const old = cartsRef.current.find((c) => c.id === cartId);
+    if (!old) return;
+    const cart = { ...edit(old), updatedAt: Date.now() };
+    // removing the last item deletes the cart
+    if (!cart.lines.length) return deleteCart(cartId);
+    setCarts(cartsRef.current.map((c) => (c.id === cartId ? cart : c)));
+    persist((uid) => remote.saveCart(uid, cart));
+  };
+
   const setQuantity = (cartId: string, offerId: string, quantity: number) =>
-    setCarts((cs) =>
-      cs
-        .map((c) =>
-          c.id !== cartId
-            ? c
-            : { ...c, updatedAt: Date.now(), lines: c.lines.map((l) => (l.offerId === offerId ? { ...l, quantity } : l)).filter((l) => l.quantity > 0) },
-        )
-        // removing the last item deletes the cart
-        .filter((c) => c.lines.length > 0),
-    );
+    editCart(cartId, (c) => ({ ...c, lines: c.lines.map((l) => (l.offerId === offerId ? { ...l, quantity } : l)).filter((l) => l.quantity > 0) }));
 
-  const setCartMode = (cartId: string, mode: Mode) =>
-    setCarts((cs) => cs.map((c) => (c.id === cartId ? { ...c, mode, updatedAt: Date.now() } : c)));
+  const setCartMode = (cartId: string, mode: Mode) => editCart(cartId, (c) => ({ ...c, mode }));
 
-  const deleteCart = (cartId: string) => setCarts((cs) => cs.filter((c) => c.id !== cartId));
+  const deleteCart = (cartId: string) => {
+    setCarts(cartsRef.current.filter((c) => c.id !== cartId));
+    persist(() => remote.deleteCart(cartId));
+  };
 
   const place = async (lines: CartLine[], mode: Mode): Promise<Order | null> => {
     const pm = paymentMethods.find((p) => p.id === defaultPaymentId) ?? paymentMethods[0];
     const eta = Math.max(...lines.map((l) => optionsForOffer(OFFERS.find((o) => o.id === l.offerId)!, selected).find((o) => o.mode === mode)?.etaMinutes ?? 30));
     try {
       const input = { lines, mode, paymentMethod: pm, getCashBalanceUSD: getCashUSD, deliverTo: selected, etaMinutes: eta };
-      const order = (await postCheckout(input)) ?? simulateCheckout(input);
-      if (pm.kind === 'get_cash') setGetCash((v) => Math.round((v - getCashCost(order)) * 100) / 100);
+      // with Supabase the order is saved straight to the user's account
+      const order = (!remoteUserId && (await postCheckout(input))) || { ...simulateCheckout(input), id: remote.newId() };
       setOrders((os) => [order, ...os]);
+      persist((uid) => remote.insertOrder(uid, order));
+      if (pm.kind === 'get_cash') {
+        const left = Math.round((getCashUSD - getCashCost(order)) * 100) / 100;
+        setGetCash(left);
+        persist((uid) => remote.updateProfile(uid, { getCashUSD: left }));
+      }
       return order;
     } catch (e) {
       showToast(e instanceof CheckoutError ? e.message : 'Could not place the order.');
@@ -222,9 +299,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const addCard = (input: NewCardInput) => {
     try {
-      const pm = createFakeCard(input);
+      const pm = { ...createFakeCard(input), id: remote.newId() };
       setPaymentMethods((p) => [...p, pm]);
       setDefaultPayment(pm.id);
+      persist(async (uid) => {
+        await remote.insertPaymentMethod(uid, pm);
+        await remote.setDefaultPaymentMethod(uid, pm.id);
+      });
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'Invalid card';
@@ -251,13 +332,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     reservations,
     paymentMethods,
     defaultPaymentId,
-    setDefaultPayment,
+    setDefaultPayment: (id: string) => {
+      setDefaultPayment(id);
+      persist((uid) => remote.setDefaultPaymentMethod(uid, id));
+    },
     addCard,
     getCashUSD,
+    profile,
+    updateProfile: (patch) => {
+      setProfile((p) => ({ ...p, ...patch }));
+      persist((uid) => remote.updateProfile(uid, patch));
+    },
     toast,
     showToast,
   };
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  // Home waits for the account so it never flashes demo data
+  return <Ctx.Provider value={value}>{ready ? children : null}</Ctx.Provider>;
 }
 
 export function useApp(): AppState {

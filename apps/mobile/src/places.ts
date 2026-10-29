@@ -41,18 +41,20 @@ const CITIES: Place[] = [
   ['Lagos', 'Nigeria', 6.5244, 3.3792],
 ].map(([name, address, lat, lng]) => ({ name: name as string, address: address as string, lat: lat as number, lng: lng as number }));
 
-const STORE_PLACES: Place[] = STORES.filter((s) => s.kind === 'physical').map((s) => ({
-  name: s.name,
-  address: `${s.address}, ${s.city}`,
-  lat: s.lat,
-  lng: s.lng,
-}));
+// a function so stores loaded from Supabase after startup are searchable too
+const storePlaces = (): Place[] =>
+  STORES.filter((s) => s.kind === 'physical').map((s) => ({
+    name: s.name,
+    address: `${s.address}, ${s.city}`,
+    lat: s.lat,
+    lng: s.lng,
+  }));
 
 const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 export function searchPlaces(q: string, limit = 10): Place[] {
   const needle = fold(q.trim());
-  const all = [...CITIES, ...STORE_PLACES];
+  const all = [...CITIES, ...storePlaces()];
   if (!needle) return CITIES.slice(0, limit);
   return all.filter((p) => fold(p.name).includes(needle) || fold(p.address).includes(needle)).slice(0, limit);
 }

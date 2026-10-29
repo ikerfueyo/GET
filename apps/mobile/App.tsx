@@ -6,6 +6,10 @@ import { LoadingScreen } from './src/LoadingScreen';
 import { LoginScreen } from './src/LoginScreen';
 import { AppStateProvider } from './src/state/AppState';
 import { AuthProvider, useAuth } from './src/state/Auth';
+import { catalogReady } from './src/state/remote';
+
+// the catalogue loads from Supabase while the loading screen plays
+catalogReady();
 
 export default function App() {
   return (

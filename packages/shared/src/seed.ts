@@ -213,3 +213,23 @@ export const DEMO_GET_CASH_USD = 150;
 
 export const storeById = new Map(STORES.map((s) => [s.id, s]));
 export const productById = new Map(PRODUCTS.map((p) => [p.id, p]));
+
+export interface Catalog {
+  stores: Store[];
+  products: Product[];
+  offers: Offer[];
+}
+
+/**
+ * Swap in a catalogue loaded from the database. The arrays and maps are
+ * refilled in place so every module that imported them sees the new data.
+ */
+export function loadCatalog(c: Catalog) {
+  STORES.splice(0, STORES.length, ...c.stores);
+  PRODUCTS.splice(0, PRODUCTS.length, ...c.products);
+  OFFERS.splice(0, OFFERS.length, ...c.offers);
+  storeById.clear();
+  for (const s of STORES) storeById.set(s.id, s);
+  productById.clear();
+  for (const p of PRODUCTS) productById.set(p.id, p);
+}
