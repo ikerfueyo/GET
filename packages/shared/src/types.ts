@@ -77,7 +77,7 @@ export interface Offer {
 export interface SavedLocation extends LatLng {
   id: string;
   label: string;
-  icon: 'here' | 'home' | 'work' | 'pin';
+  icon: 'here' | 'home' | 'work' | 'school' | 'pin';
   address: string;
   buildingType?: 'House' | 'Apartment' | 'Office' | 'Hotel' | 'Other';
   details?: string;

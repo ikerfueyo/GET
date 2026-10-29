@@ -16,8 +16,9 @@ import { PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } 
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
 import { feature, mesh } from 'topojson-client';
 import countries110 from 'world-atlas/countries-110m.json';
-import type { LatLng } from '@get/shared';
+import type { LatLng, SavedLocation } from '@get/shared';
 import { colors } from '../theme';
+import { placeShapes } from './Icons';
 import { MOON_RADIUS, dotRadius, skyAt, starsAt, type Vec } from './sky';
 import surfaces from './surfaces.json';
 
@@ -43,7 +44,8 @@ const MAX_ZOOM = 12;
 type Props = {
   width: number;
   height: number;
-  selected: LatLng;
+  /** the pin shows the location's own icon (Here's ring, Home, Work, ...) */
+  selected: LatLng & { icon?: SavedLocation['icon'] };
   /** when this object changes the globe flies to it */
   focus?: { point: LatLng; zoom?: number; key: number };
   /**
@@ -397,7 +399,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
           <G>
             <Ellipse cx={pin[0]} cy={pin[1] + 13} rx={7} ry={2.5} fill="#000" opacity={0.35} />
             <Circle cx={pin[0]} cy={pin[1]} r={11} fill={colors.red} />
-            <Circle cx={pin[0]} cy={pin[1]} r={4.6} fill={colors.white} />
+            <G transform={`translate(${pin[0] - 6.5} ${pin[1] - 6.5}) scale(${13 / 24})`}>{placeShapes(selected.icon ?? 'here', colors.white)}</G>
           </G>
         )}
 

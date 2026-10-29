@@ -1,43 +1,68 @@
 /**
  * LI 1 / LI 11 / LI 16: the strip of locations at the top of the screen.
- * Tap selects (icon turns red, globe flies there), Search finds a place,
- * + adds one to the far right, long-press shows options.
+ * Tap selects (the icon's circle turns red, globe flies there), Search finds a
+ * place, + adds one to the far right. Pressing a location (long-press, or a
+ * tap on the one already selected) opens its options under its icon (LI 2 /
+ * LI 8): Edit, Share and Save for Here or a searched place, Edit, Share and
+ * Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import type { SavedLocation } from '@get/shared';
-import { BackIcon, CloseIcon, HomeIcon, PinIcon, PlusIcon, SearchIcon, WorkIcon } from '../components/Icons';
+import { BackIcon, ChevronIcon, CloseIcon, PlaceIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { T } from '../components/ui';
 import { searchPlaces, type Place } from '../places';
 import { useApp } from '../state/AppState';
 import { colors, fonts } from '../theme';
 
-function LocationGlyph({ loc, selected }: { loc: SavedLocation; selected: boolean }) {
-  const fg = colors.white;
-  if (loc.icon === 'here' || selected) {
-    // the red ring, same as the pin on the globe
-    return (
-      <View style={[styles.circle, { backgroundColor: selected ? colors.red : colors.black }]}>
-        <View style={styles.ring} />
-      </View>
-    );
-  }
+type Icon = SavedLocation['icon'];
+type Building = NonNullable<SavedLocation['buildingType']>;
+
+const BUILDINGS: Building[] = ['House', 'Apartment', 'Office', 'Hotel', 'Other'];
+const LABEL_ICONS: { icon: Icon; name: string }[] = [
+  { icon: 'home', name: 'Home' },
+  { icon: 'work', name: 'Work' },
+  { icon: 'school', name: 'School' },
+  { icon: 'pin', name: 'Other' },
+];
+
+/** Here and a searched place are not saved yet; everything else is */
+const isCurrent = (l: SavedLocation) => l.icon === 'here' || l.id === 'loc_picked';
+
+const ITEM_W = 56; // strip item width incl. margins
+const MENU_W = 170;
+
+function LocationGlyph({ icon, selected, size = 34 }: { icon: Icon; selected: boolean; size?: number }) {
+  // each location keeps its own icon; selecting only turns the circle red
+  const glyph = Math.round(size * (icon === 'here' ? 0.6 : 0.44));
   return (
-    <View style={styles.circle}>
-      {loc.icon === 'home' ? <HomeIcon size={15} color={fg} /> : loc.icon === 'work' ? <WorkIcon size={15} color={fg} /> : <PinIcon size={15} color={fg} />}
+    <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: selected ? colors.red : colors.black }]}>
+      <PlaceIcon icon={icon} size={glyph} color={colors.white} />
     </View>
   );
 }
 
-export function LocationInterface({ top }: { top: number }) {
-  const { locations, selected, selectLocation, pickLocation, saveLocation } = useApp();
+type Form = { kind: 'edit' | 'save' | 'delete'; loc: SavedLocation };
+
+export function LocationInterface({ top, onOverlay }: { top: number; onOverlay?: (open: boolean) => void }) {
+  const { locations, selected, selectLocation, pickLocation, saveLocation, updateLocation, removeLocation } = useApp();
   const [mode, setMode] = useState<'strip' | 'search' | 'add'>('strip');
   const [query, setQuery] = useState('');
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [removed, setRemoved] = useState<string[]>([]);
+  const [form, setForm] = useState<Form | null>(null);
+  const [stripW, setStripW] = useState(0);
+  const scrollX = useRef(0);
+  const scrollLeft = useRef(0); // where the scrolling part starts inside the strip
+  const [menuLeft, setMenuLeft] = useState(0);
 
-  const visible = locations.filter((l) => !removed.includes(l.id));
   const results = searchPlaces(query);
+
+  // the side bar sits where the menu and forms open, so it steps aside meanwhile
+  const overlay = !!menuFor || !!form;
+  useEffect(() => {
+    onOverlay?.(overlay);
+    return () => onOverlay?.(false);
+  }, [overlay, onOverlay]);
 
   const choose = (p: Place) => {
     if (mode === 'search') pickLocation(p, p.name, p.address);
@@ -45,6 +70,32 @@ export function LocationInterface({ top }: { top: number }) {
     setMode('strip');
     setQuery('');
   };
+
+  const openMenu = (id: string, index: number) => {
+    // centred under the icon that was pressed, kept inside the strip
+    const iconCenter = 8 + scrollLeft.current + index * ITEM_W + ITEM_W / 2 - scrollX.current;
+    setMenuLeft(Math.max(0, Math.min(iconCenter - MENU_W / 2, stripW - MENU_W)));
+    setMenuFor(id);
+  };
+
+  if (form) {
+    return (
+      <View style={[styles.wrap, { top }]}>
+        <LocationForm
+          form={form}
+          onCancel={() => setForm(null)}
+          onDone={(patch) => {
+            if (form.kind === 'edit') updateLocation(form.loc.id, patch);
+            else if (form.kind === 'save') {
+              const { id: _id, ...rest } = { ...form.loc, ...patch };
+              saveLocation({ ...rest, icon: patch.icon ?? 'pin' });
+            } else removeLocation(form.loc.id);
+            setForm(null);
+          }}
+        />
+      </View>
+    );
+  }
 
   if (mode !== 'strip') {
     return (
@@ -82,30 +133,42 @@ export function LocationInterface({ top }: { top: number }) {
     );
   }
 
-  const menuLoc = visible.find((l) => l.id === menuFor);
+  const menuLoc = locations.find((l) => l.id === menuFor);
+  const close = () => setMenuFor(null);
 
   return (
     <View style={[styles.wrap, { top }]}>
-      <View style={styles.strip}>
+      <View style={styles.strip} onLayout={(e) => setStripW(e.nativeEvent.layout.width)}>
         <Pressable onPress={() => setMode('search')} style={styles.searchBtn} accessibilityLabel="Search locations">
           <SearchIcon size={20} />
         </Pressable>
         <View style={styles.sep} />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
-          {visible.map((loc) => {
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ alignItems: 'center' }}
+          onLayout={(e) => (scrollLeft.current = e.nativeEvent.layout.x - 8)}
+          onScroll={(e) => {
+            scrollX.current = e.nativeEvent.contentOffset.x;
+            if (menuFor) close();
+          }}
+          scrollEventThrottle={32}
+        >
+          {locations.map((loc, i) => {
             const isSel = loc.id === selected.id;
             return (
               <Pressable
                 key={loc.id}
                 onPress={() => {
-                  setMenuFor(null);
+                  if (isSel) return menuFor === loc.id ? close() : openMenu(loc.id, i);
+                  close();
                   selectLocation(loc.id);
                 }}
-                onLongPress={() => setMenuFor(loc.id)}
+                onLongPress={() => openMenu(loc.id, i)}
                 style={styles.item}
                 accessibilityLabel={`${loc.label}${isSel ? ', selected' : ''}`}
               >
-                <LocationGlyph loc={loc} selected={isSel} />
+                <LocationGlyph icon={loc.icon} selected={isSel} />
                 <T numberOfLines={1} style={[styles.label, isSel && { fontWeight: '700' }]}>
                   {loc.label}
                 </T>
@@ -118,53 +181,195 @@ export function LocationInterface({ top }: { top: number }) {
         </ScrollView>
       </View>
 
-      <View style={styles.addressBar}>
-        <T numberOfLines={1} style={styles.address}>
-          {selected.label} · {selected.address}
-        </T>
-      </View>
-
-      {menuLoc && (
-        <View style={styles.menu}>
-          {menuLoc.id === 'loc_picked' && (
-            <MenuItem
-              label="Save"
-              onPress={() => {
-                saveLocation({ ...menuLoc, label: menuLoc.label === 'Pinned' ? 'Saved' : menuLoc.label });
-                setMenuFor(null);
-              }}
-            />
-          )}
+      {menuLoc ? (
+        <View style={[styles.menu, { left: menuLeft }]}>
+          <View style={styles.menuHead}>
+            <T numberOfLines={3} style={styles.menuAddress}>
+              {menuLoc.address}
+            </T>
+          </View>
+          <MenuItem
+            label="Edit"
+            onPress={() => {
+              close();
+              setForm({ kind: 'edit', loc: menuLoc });
+            }}
+          />
           <MenuItem
             label="Share"
             onPress={() => {
               Share.share({ message: `${menuLoc.label}: ${menuLoc.address} (${menuLoc.lat.toFixed(5)}, ${menuLoc.lng.toFixed(5)})` }).catch(() => {});
-              setMenuFor(null);
+              close();
             }}
           />
-          {menuLoc.icon !== 'here' && menuLoc.id !== 'loc_picked' && (
+          {isCurrent(menuLoc) ? (
+            <MenuItem
+              label="Save"
+              last
+              onPress={() => {
+                close();
+                setForm({ kind: 'save', loc: menuLoc });
+              }}
+            />
+          ) : (
             <MenuItem
               label="Delete"
               danger
+              last
               onPress={() => {
-                setRemoved((r) => [...r, menuLoc.id]);
-                // if the deleted one was selected, Here becomes the selection
-                if (menuLoc.id === selected.id) selectLocation('loc_here');
-                setMenuFor(null);
+                close();
+                setForm({ kind: 'delete', loc: menuLoc });
               }}
             />
           )}
+        </View>
+      ) : (
+        <View style={styles.addressBar}>
+          <T numberOfLines={1} style={styles.address}>
+            {selected.label} · {selected.address}
+          </T>
         </View>
       )}
     </View>
   );
 }
 
-function MenuItem({ label, onPress, danger }: { label: string; onPress: () => void; danger?: boolean }) {
+function MenuItem({ label, onPress, danger, last }: { label: string; onPress: () => void; danger?: boolean; last?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={styles.menuItem}>
+    <Pressable onPress={onPress} style={[styles.menuItem, last && { borderBottomWidth: 0 }]}>
       <T style={[styles.menuText, danger && { color: colors.red }]}>{label}</T>
     </Pressable>
+  );
+}
+
+/**
+ * LI 3 (edit Here), LI 4 (save Here or a searched place), LI 9 (edit a saved
+ * place) and LI 10 (delete one). Cancel | the location's icon | Done.
+ */
+function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => void; onDone: (patch: Partial<Omit<SavedLocation, 'id'>>) => void }) {
+  const { kind, loc } = form;
+  const firstLine = loc.address.split(',')[0].trim();
+  const [address, setAddress] = useState(loc.address);
+  const [building, setBuilding] = useState<Building | undefined>(loc.buildingType);
+  const [pickBuilding, setPickBuilding] = useState(false);
+  const [details, setDetails] = useState(loc.details ?? '');
+  // saving: Other by default, named after the address's first line (Here) or the place
+  const [icon, setIcon] = useState<Icon>(kind === 'save' ? 'pin' : loc.icon);
+  const [name, setName] = useState(kind === 'save' ? (loc.icon === 'here' ? firstLine : loc.label) : loc.label);
+  const withLabel = kind === 'save' || (kind === 'edit' && !isCurrent(loc));
+  const shown: Icon = kind === 'delete' ? loc.icon : withLabel ? icon : loc.icon;
+
+  const header = (
+    <View style={styles.formHead}>
+      <Pressable onPress={onCancel} hitSlop={8} style={styles.headBtn} accessibilityLabel="Cancel">
+        <T style={styles.headText}>Cancel</T>
+      </Pressable>
+      <LocationGlyph icon={shown} selected size={34} />
+      <Pressable
+        onPress={() =>
+          onDone(
+            kind === 'delete'
+              ? {}
+              : {
+                  address: address.trim() || loc.address,
+                  buildingType: building,
+                  details: details.trim() || undefined,
+                  ...(withLabel ? { icon, label: name.trim() || LABEL_ICONS.find((l) => l.icon === icon)?.name || loc.label } : {}),
+                },
+          )
+        }
+        hitSlop={8}
+        style={[styles.headBtn, styles.doneBtn, kind === 'delete' && { backgroundColor: colors.red }]}
+        accessibilityLabel={kind === 'delete' ? 'Delete' : 'Done'}
+      >
+        <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>{kind === 'delete' ? 'Delete' : 'Done'}</T>
+      </Pressable>
+    </View>
+  );
+
+  if (kind === 'delete') {
+    return (
+      <View style={styles.form}>
+        {header}
+        <T style={styles.deleteText}>
+          Delete {loc.label}? {loc.address}
+        </T>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.form}>
+      {header}
+      <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
+        <TextInput value={address} onChangeText={setAddress} multiline style={styles.addressInput} accessibilityLabel="Address" />
+
+        <T style={styles.fieldLabel}>Building type</T>
+        <Pressable onPress={() => setPickBuilding((v) => !v)} style={styles.field} accessibilityLabel="Building type">
+          <T style={[styles.fieldText, !building && { color: colors.muted }]}>{building ?? 'Choose'}</T>
+          <View style={{ transform: [{ rotate: pickBuilding ? '-90deg' : '90deg' }] }}>
+            <ChevronIcon size={14} />
+          </View>
+        </Pressable>
+        {pickBuilding && (
+          <View style={styles.dropdown}>
+            {BUILDINGS.map((b) => (
+              <Pressable
+                key={b}
+                onPress={() => {
+                  setBuilding(b);
+                  setPickBuilding(false);
+                }}
+                style={styles.dropRow}
+              >
+                <T style={[styles.fieldText, b === building && { fontWeight: '700' }]}>{b}</T>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        <T style={styles.fieldLabel}>Additional details</T>
+        <TextInput
+          value={details}
+          onChangeText={setDetails}
+          placeholder="e.g. House number or name"
+          placeholderTextColor={colors.muted}
+          style={[styles.field, styles.fieldText]}
+        />
+
+        {withLabel && (
+          <>
+            <T style={styles.fieldLabel}>Label</T>
+            <View style={styles.labelRow}>
+              {LABEL_ICONS.map((l) => {
+                const on = l.icon === icon;
+                return (
+                  <Pressable
+                    key={l.icon}
+                    onPress={() => {
+                      // a name that was just the previous label follows the new one
+                      if (LABEL_ICONS.some((x) => x.name === name)) setName(l.name === 'Other' ? (kind === 'save' ? firstLine : loc.label) : l.name);
+                      setIcon(l.icon);
+                    }}
+                    style={[styles.chip, on && { backgroundColor: colors.black }]}
+                    accessibilityLabel={l.name}
+                  >
+                    <PlaceIcon icon={l.icon} size={12} color={on ? colors.white : colors.black} />
+                    <T style={[styles.chipText, on && { color: colors.white }]}>{l.name}</T>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={[styles.field, { paddingRight: 6 }]}>
+              <TextInput value={name} onChangeText={setName} placeholder="Name" placeholderTextColor={colors.muted} style={[styles.fieldText, { flex: 1 }]} />
+              <Pressable onPress={() => setName('')} hitSlop={8} style={styles.clear} accessibilityLabel="Clear name">
+                <CloseIcon size={9} color={colors.white} />
+              </Pressable>
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -182,7 +387,7 @@ const styles = StyleSheet.create({
   },
   searchBtn: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center' },
   sep: { width: 1.5, height: 40, backgroundColor: colors.black, marginHorizontal: 6 },
-  item: { width: 52, alignItems: 'center', marginHorizontal: 2 },
+  item: { width: ITEM_W - 4, alignItems: 'center', marginHorizontal: 2 },
   circle: {
     width: 34,
     height: 34,
@@ -190,11 +395,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.black,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: colors.black,
   },
-  ring: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.white },
-  label: { fontSize: 10, marginTop: 2, maxWidth: 52 },
+  label: { fontSize: 10, marginTop: 2, maxWidth: ITEM_W - 4 },
   add: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   addressBar: { alignSelf: 'center', marginTop: 6, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3, maxWidth: '90%' },
   address: { fontSize: 12 },
@@ -216,7 +418,24 @@ const styles = StyleSheet.create({
   row: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.hairline },
   rowTitle: { fontSize: 15, fontWeight: '600' },
   rowSub: { fontSize: 12, color: colors.muted },
-  menu: { position: 'absolute', top: 64, left: 70, backgroundColor: colors.white, borderRadius: 8, borderWidth: 1, borderColor: colors.black, overflow: 'hidden' },
-  menuItem: { paddingHorizontal: 16, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.hairline },
+  menu: { position: 'absolute', top: 66, width: MENU_W, backgroundColor: colors.white, borderRadius: 8, borderWidth: 1, borderColor: colors.black, overflow: 'hidden' },
+  menuHead: { backgroundColor: colors.panel, paddingHorizontal: 12, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.black },
+  menuAddress: { fontSize: 12 },
+  menuItem: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.hairline },
   menuText: { fontSize: 15 },
+  form: { backgroundColor: colors.panel, borderRadius: 10, borderWidth: 1, borderColor: colors.black, padding: 10 },
+  formHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  headBtn: { minWidth: 64, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6 },
+  doneBtn: { backgroundColor: colors.black, alignItems: 'center' },
+  headText: { fontSize: 15 },
+  deleteText: { fontSize: 13, textAlign: 'center', marginTop: 2 },
+  addressInput: { fontSize: 15, fontFamily: fonts.sans, color: colors.ink, paddingVertical: 4 },
+  fieldLabel: { fontSize: 15, fontWeight: '600', marginTop: 10, marginBottom: 4 },
+  field: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.white, borderRadius: 6, borderWidth: 1, borderColor: colors.black, paddingHorizontal: 10, height: 38 },
+  fieldText: { fontSize: 15, fontFamily: fonts.sans, color: colors.ink },
+  dropdown: { backgroundColor: colors.white, borderRadius: 6, borderWidth: 1, borderColor: colors.black, marginTop: 2 },
+  dropRow: { paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.hairline },
+  labelRow: { flexDirection: 'row', gap: 6, marginBottom: 6 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 26, borderRadius: 13, borderWidth: 1, borderColor: colors.black, backgroundColor: colors.white },
+  chipText: { fontSize: 12 },
 });

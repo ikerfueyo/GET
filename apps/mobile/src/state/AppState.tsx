@@ -54,6 +54,9 @@ interface AppState {
   /** a location picked on the globe or found by search; sits between Search and Here */
   pickLocation: (p: LatLng, label?: string, address?: string) => void;
   saveLocation: (loc: Omit<SavedLocation, 'id'>) => void;
+  /** Done on an Edit form; Here and a searched location only change on this device */
+  updateLocation: (id: string, patch: Partial<Omit<SavedLocation, 'id'>>) => void;
+  removeLocation: (id: string) => void;
   focusKey: number;
 
   panel: Panel;
@@ -206,6 +209,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     persist((uid) => remote.insertLocation(uid, saved, position));
   };
 
+  const updateLocation = (id: string, patch: Partial<Omit<SavedLocation, 'id'>>) => {
+    if (id === 'loc_picked') {
+      setPicked((p) => (p ? { ...p, ...patch } : p));
+    } else {
+      setLocations((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+      if (id !== 'loc_here') persist(() => remote.updateLocation(id, patch));
+    }
+    if (patch.lat !== undefined || patch.lng !== undefined) setFocusKey((k) => k + 1);
+  };
+
+  const removeLocation = (id: string) => {
+    if (id === 'loc_here') return;
+    setLocations((ls) => ls.filter((l) => l.id !== id));
+    persist(() => remote.deleteLocation(id));
+    // if the deleted one was selected, Here becomes the selection
+    if (id === selectedId) selectLocation('loc_here');
+  };
+
   const addToCart = (offerId: string, mode: Mode) => {
     const offer = OFFERS.find((o) => o.id === offerId);
     if (!offer) return;
@@ -308,6 +329,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     selectLocation,
     pickLocation,
     saveLocation,
+    updateLocation,
+    removeLocation,
     focusKey,
     panel,
     setPanel,

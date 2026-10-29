@@ -3,7 +3,7 @@
  * scale as a satellite view from above (land, water, mountains, like Google
  * Earth) and, once you reach street level, turns into HS 2 from
  * Sketches/Home Screen.png: white ground, thick black streets with their names
- * in white. The selected location stays the red ring the whole way down.
+ * in white. The selected location's red pin (with its own icon) stays the whole way down.
  *
  * Imagery is Esri World Imagery; streets are OpenStreetMap vector tiles (see
  * ./tiles) drawn with react-native-svg. Neither needs a map SDK or API key, so it
@@ -14,8 +14,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Ellipse, G, Path, Text as SvgText } from 'react-native-svg';
-import type { LatLng } from '@get/shared';
+import type { LatLng, SavedLocation } from '@get/shared';
 import { colors, fonts } from '../theme';
+import { placeShapes } from './Icons';
 import { T } from './ui';
 import { ATTRIBUTION, BUILDINGS_ZOOM, ROADS, TILE_MAX_ZOOM, fromWorld, getBuildings, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
 
@@ -41,7 +42,7 @@ type Props = {
   width: number;
   height: number;
   active: boolean;
-  selected: LatLng;
+  selected: LatLng & { icon?: SavedLocation['icon'] };
   /**
    * when the key changes the map opens on this point at the globe's scale
    * (its radius in px); with `streets` it then flies down to street level
@@ -413,7 +414,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           <G>
             <Ellipse cx={pin.x} cy={pin.y + 15} rx={8} ry={3} fill="#000" opacity={0.3} />
             <Circle cx={pin.x} cy={pin.y} r={13} fill={colors.red} />
-            <Circle cx={pin.x} cy={pin.y} r={5.5} fill={colors.white} />
+            <G transform={`translate(${pin.x - 7.75} ${pin.y - 7.75}) scale(${15.5 / 24})`}>{placeShapes(selected.icon ?? 'here', colors.white)}</G>
           </G>
         )}
       </Svg>
