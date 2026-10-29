@@ -27,6 +27,9 @@ const PIN_ZOOM = 16;
 /** the satellite view gives way to the black-and-white streets between these */
 const STREETS_FROM = 14.4;
 const STREETS_FULL = 15.4;
+/** building footprints fade in between these, under the streets */
+const BUILDINGS_FROM = 15.6;
+const BUILDINGS_FULL = 16.4;
 
 const SATELLITE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
 const SAT_MAX_ZOOM = 18;
@@ -263,6 +266,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   const tiles: Placed[] = [];
   const seen = new Set<string>();
   const streets = clamp((zoom - STREETS_FROM) / (STREETS_FULL - STREETS_FROM), 0, 1);
+  const buildings = clamp((zoom - BUILDINGS_FROM) / (BUILDINGS_FULL - BUILDINGS_FROM), 0, 1);
   if (enter.key && streets > 0) {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
@@ -294,6 +298,10 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   const drawTile = ({ key, tile, ox, oy, s }: Placed) => (
     <G key={key} transform={`translate(${ox} ${oy}) scale(${s})`}>
       {!!tile.water && <Path d={tile.water} fill={colors.field} />}
+      {!!tile.buildings && buildings > 0 && (
+        // fill only: an outline would also trace where buildings are cut at tile edges
+        <Path d={tile.buildings} fill="#E4E4E4" opacity={buildings} />
+      )}
       {ROADS.slice()
         .reverse()
         .map((r) =>

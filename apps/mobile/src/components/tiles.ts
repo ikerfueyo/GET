@@ -1,7 +1,8 @@
 /**
  * Street data for HS 2: OpenStreetMap vector tiles (OpenMapTiles schema) from
  * OpenFreeMap, which needs no API key. We only keep what the sketch draws:
- * streets and their names, plus water so coastlines still read.
+ * streets and their names, building footprints for close zooms (like the Uber
+ * Eats map), plus water so coastlines still read.
  */
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
@@ -40,6 +41,7 @@ export interface TileData {
   extent: number;
   roads: Partial<Record<RoadKey, string>>;
   water: string;
+  buildings: string;
   labels: Label[];
 }
 
@@ -99,7 +101,7 @@ export function getTile(z: number, x: number, y: number): TileData | undefined {
 
 function parseTile(buf: ArrayBuffer): TileData {
   const vt = new VectorTile(new PbfReader(buf));
-  const out: TileData = { extent: 4096, roads: {}, water: '', labels: [] };
+  const out: TileData = { extent: 4096, roads: {}, water: '', buildings: '', labels: [] };
   const parts: Partial<Record<RoadKey, string[]>> = {};
 
   const roads = vt.layers.transportation;
@@ -122,6 +124,16 @@ function parseTile(buf: ArrayBuffer): TileData {
       if (f.type === 3) w.push(ringsD(f.loadGeometry()));
     }
     out.water = w.join('');
+  }
+
+  const buildings = vt.layers.building;
+  if (buildings) {
+    const b: string[] = [];
+    for (let i = 0; i < buildings.length; i++) {
+      const f = buildings.feature(i);
+      if (f.type === 3) b.push(ringsD(f.loadGeometry()));
+    }
+    out.buildings = b.join('');
   }
 
   const names = vt.layers.transportation_name;
