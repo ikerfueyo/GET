@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Skia for web: copied from canvaskit-wasm by `npm run setup-web`
+public/canvaskit.wasm
