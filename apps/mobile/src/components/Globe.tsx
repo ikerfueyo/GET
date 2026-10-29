@@ -1,14 +1,16 @@
 /**
- * HS 1: planet Earth in black space, orbited by the Moon and Mars.
+ * HS 1: planet Earth in black space, with the stars where they really are and
+ * the Moon and Mars on their real bearings and phases.
  * Drag to rotate, pinch (or mouse wheel on web) to zoom, tap the selected pin
  * to zoom into it. Taps elsewhere do nothing: the selected location only
  * changes from the Location Interface. Zooming in past the
  * globe's closest view (or tapping the pin) dives into the street map, HS 2.
  *
  * Drawn with d3-geo's orthographic projection into react-native-svg so it
- * runs in Expo Go and on the web without native 3D.
+ * runs in Expo Go and on the web without native 3D. The stars are seen through
+ * a perspective camera floating above the point at the centre.
  */
-import { geoDistance, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
+import { geoCircle, geoDistance, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
@@ -16,11 +18,23 @@ import { feature, mesh } from 'topojson-client';
 import countries110 from 'world-atlas/countries-110m.json';
 import type { LatLng } from '@get/shared';
 import { colors } from '../theme';
-import { bodyLongitudes } from './sky';
+import { MOON_RADIUS, dotRadius, skyAt, starsAt, type Vec } from './sky';
+import surfaces from './surfaces.json';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const topo = countries110 as any;
 const LAND = feature(topo, topo.objects.land) as unknown as GeoPermissibleObjects;
+// Surfaces painted over the green land (surfaces.json). Ice: Natural Earth
+// 1:50m glaciated areas, simplified and clipped to the 110m coastline, plus
+// every 110m landmass that is mostly ice or lies south of 60°S, painted whole,
+// so Antarctica, Greenland, Svalbard and Franz Josef Land are white and the
+// ice fields of the Canadian Arctic, Alaska, Patagonia and the Himalaya show.
+// Desert: Natural Earth 1:50m desert regions (Sahara, Arabia, Gobi, Australia's
+// deserts, Atacama, Kalahari...), clipped the same way.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const surf = surfaces as any;
+const ICE = feature(surf, surf.objects.ice) as unknown as GeoPermissibleObjects;
+const DESERT = feature(surf, surf.objects.desert) as unknown as GeoPermissibleObjects;
 const BORDERS = mesh(topo, topo.objects.countries, (a: unknown, b: unknown) => a !== b) as GeoPermissibleObjects;
 
 const MIN_ZOOM = 0.8;
@@ -40,6 +54,30 @@ type Props = {
   onDive?: (center: LatLng, scale: number, byPin: boolean) => void;
 };
 
+const rad = (d: number) => (d * Math.PI) / 180;
+const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const normalize = (a: Vec): Vec => {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+/** unit vector of a latitude/longitude in the Earth-fixed frame */
+const unit = (lat: number, lng: number): Vec => [
+  Math.cos(rad(lat)) * Math.cos(rad(lng)),
+  Math.cos(rad(lat)) * Math.sin(rad(lng)),
+  Math.sin(rad(lat)),
+];
+// the Moon's maria as seen from the Earth, north up: [x, y, rx, ry] in Moon radii
+const MARIA: [number, number, number, number][] = [
+  [-0.55, 0.15, 0.27, 0.45], // Oceanus Procellarum
+  [-0.25, 0.48, 0.24, 0.2], // Imbrium
+  [0.2, 0.45, 0.14, 0.13], // Serenitatis
+  [0.36, 0.14, 0.17, 0.15], // Tranquillitatis
+  [0.72, 0.3, 0.09, 0.08], // Crisium
+  [0.6, -0.12, 0.11, 0.13], // Fecunditatis
+  [-0.18, -0.36, 0.15, 0.12], // Nubium
+  [-0.5, -0.42, 0.09, 0.08], // Humorum
+];
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
@@ -51,7 +89,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
   const anim = useRef<number | null>(null);
   const [now, setNow] = useState(() => new Date());
 
-  // the Moon and Mars move in real time; once a minute is plenty
+  // the sky turns and the Moon and planets move in real time; once a minute is plenty
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
@@ -110,9 +148,25 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
   );
   const path = geoPath(projection);
   const landD = path(LAND) ?? '';
+  const iceD = path(ICE) ?? '';
+  const desertD = path(DESERT) ?? '';
   const bordersD = path(BORDERS) ?? '';
 
   const center: [number, number] = [-lambda, -phi];
+
+  // night: the hemisphere facing away from the real Sun, darkening in six
+  // light bands from the terminator inwards, so the edge reads as twilight
+  const sky = useMemo(() => skyAt(now), [now]);
+  const sunLen = Math.hypot(...sky.sun);
+  const antiSun: [number, number] = [
+    (Math.atan2(-sky.sun[1], -sky.sun[0]) * 180) / Math.PI,
+    (Math.asin(-sky.sun[2] / sunLen) * 180) / Math.PI,
+  ];
+  const nightDs = useMemo(
+    () => [90, 87, 84, 81, 78, 75].map((radius) => path(geoCircle().center(antiSun).radius(radius)()) ?? ''),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projection, antiSun[0], antiSun[1]],
+  );
   const pinVisible = geoDistance([selected.lng, selected.lat], center) < Math.PI / 2 - 0.02;
   const pin = pinVisible ? projection([selected.lng, selected.lat]) : null;
 
@@ -211,28 +265,102 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
         }
       : {};
 
-  // ── Moon and Mars ──
-  const sky = bodyLongitudes(now);
-  // orbits are tilted ellipses around the globe; bodies on the far side pass behind it
-  const TILT = (-26 * Math.PI) / 180;
-  const orbit = (lng: number, rx: number, flat: number, rad: number) => {
-    const a = ((lng - center[0]) * Math.PI) / 180; // 0 = straight towards the viewer
-    const x = Math.sin(a) * rx;
-    const y = Math.cos(a) * rx * flat;
-    return {
-      x: clamp(cx + x * Math.cos(TILT) - y * Math.sin(TILT), rad + 4, width - rad - 4),
-      y: clamp(cy + x * Math.sin(TILT) + y * Math.cos(TILT), rad + 4, height - rad - 4),
-      front: Math.cos(a) > 0,
-    };
+  // ── the stars, through a camera above the centre point ──
+  // focal length: about 70° of view across the screen's long side
+  const focal = Math.max(width, height) / 2 / Math.tan(rad(35));
+  const stars = useMemo(() => starsAt(sky.gmst), [sky]);
+  const P = unit(center[1], center[0]);
+  const F: Vec = [-P[0], -P[1], -P[2]]; // looking down at the Earth
+  const U = normalize([-F[2] * F[0], -F[2] * F[1], 1 - F[2] * F[2]]); // north, square to the view
+  const R = cross(F, U);
+  /** screen position of a direction in the sky, if it is on screen */
+  const toScreen = (v: Vec) => {
+    const z = dot(v, F);
+    if (z <= 0) return null;
+    const x = cx + (focal * dot(v, R)) / z;
+    const y = cy - (focal * dot(v, U)) / z;
+    return x < -8 || x > width + 8 || y < -8 || y > height + 8 ? null : { x, y };
   };
-  const moonR = Math.max(10, r * 0.18);
-  const marsR = Math.max(6, r * 0.065);
-  const moon = orbit(sky.moon, r * 1.32, 0.3, moonR);
-  const mars = orbit(sky.mars, Math.max(r * 1.4, width / 2 - marsR - 8), 0.9, marsR);
 
-  const body = (o: { x: number; y: number }, rad: number, fill: string, key: string) => (
-    <Circle key={key} cx={o.x} cy={o.y} r={rad} fill={fill} />
-  );
+  // stars drawn as a handful of paths, one per size, rather than thousands of circles
+  const starPaths = new Map<number, string[]>();
+  for (const st of stars) {
+    const p = toScreen(st.v);
+    if (!p) continue;
+    const size = Math.round(dotRadius(st.mag) * 5) / 5;
+    const d = `M${(p.x - size).toFixed(1)},${p.y.toFixed(1)}a${size},${size} 0 1,0 ${2 * size},0a${size},${size} 0 1,0 ${-2 * size},0`;
+    if (!starPaths.has(size)) starPaths.set(size, []);
+    starPaths.get(size)!.push(d);
+  }
+
+  // ── the Moon and Mars ──
+  // Their directions from the Earth and their phases are real, but at true scale
+  // they would be specks (the Moon is 30 Earths away), so they are drawn
+  // closer and bigger: the Moon at its true size against the Earth, Mars
+  // smaller as it is farther. Each sits on its real bearing; when that points
+  // away from the viewer it passes behind the globe. Zooming in pushes them
+  // out of the picture, so they are gone once the Earth fills the screen.
+  const sizeRef = baseR * Math.min(zoom, 1.6); // don't let them balloon when zoomed in
+  const bodies = [
+    { key: 'moon', pos: sky.moon, dist: 1.5, rad: Math.max(10, sizeRef * MOON_RADIUS), fill: colors.moon },
+    { key: 'mars', pos: sky.mars.pos, dist: 2.05, rad: Math.max(3, sizeRef * 0.053), fill: colors.mars },
+  ].map((b) => {
+    const u = normalize(b.pos);
+    const toSun = normalize([sky.sun[0] - b.pos[0], sky.sun[1] - b.pos[1], sky.sun[2] - b.pos[2]]);
+    // laid out at the unzoomed scale, kept on screen...
+    const r1 = baseR * Math.min(zoom, 1);
+    const ox = clamp(cx + b.dist * r1 * dot(u, R), b.rad + 4, width - b.rad - 4) - cx;
+    const oy = clamp(cy - b.dist * r1 * dot(u, U), b.rad + 4, height - b.rad - 4) - cy;
+    // ...then, past zoom 1, carried outwards with the Earth and beyond the screen's corners
+    const grow = Math.max(1, zoom);
+    const len = Math.hypot(ox, oy) || 1;
+    const push = (grow - 1) * Math.hypot(width, height) * 0.3;
+    const ux = len > 1 ? ox / len : 0;
+    const uy = len > 1 ? oy / len : -1;
+    return {
+      ...b,
+      u,
+      x: cx + ox * grow + ux * push,
+      y: cy + oy * grow + uy * push,
+      front: dot(u, P) > 0,
+      // hidden behind the globe: must not slide out from behind it while zooming
+      eclipsed: dot(u, P) <= 0 && len + b.rad < r1,
+      k: dot(toSun, P), // cos of the phase angle: 1 full, -1 new
+      sunAngle: (Math.atan2(-dot(toSun, U), dot(toSun, R)) * 180) / Math.PI,
+    };
+  });
+
+  /** the sunlit part of a disc of radius `m` lit from +x; k = cos(phase angle) */
+  const litPath = (m: number, k: number) =>
+    `M0,${-m}A${m},${m} 0 0,1 0,${m}A${Math.abs(k) * m},${m} 0 0,${k > 0 ? 1 : 0} 0,${-m}Z`;
+
+  const drawBody = (b: (typeof bodies)[number]) => {
+    let surface = null;
+    if (b.key === 'moon') {
+      // the dark maria of the near side, which faces the viewer when the Moon is behind the Earth
+      const near = clamp(-dot(b.u, P) * 1.6, 0, 1);
+      surface = near > 0 && (
+        <G opacity={near}>
+          {MARIA.map(([mx, my, rx, ry], i) => (
+            <Ellipse key={i} cx={mx * b.rad} cy={-my * b.rad} rx={rx * b.rad} ry={ry * b.rad} fill={colors.moonMaria} />
+          ))}
+        </G>
+      );
+    } else if (b.key === 'mars') {
+      // the polar cap that leans towards the viewer
+      const pole = dot(sky.marsPole, P) >= 0 ? sky.marsPole : (sky.marsPole.map((v) => -v) as Vec);
+      surface = (
+        <Circle cx={0.66 * b.rad * dot(pole, R)} cy={-0.66 * b.rad * dot(pole, U)} r={0.32 * b.rad} fill={colors.ice} />
+      );
+    }
+    return (
+      <G key={b.key} transform={`translate(${b.x},${b.y})`}>
+        <Circle r={b.rad} fill={b.fill} />
+        {surface}
+        <Path d={litPath(b.rad, -b.k)} fill={colors.night} opacity={0.94} transform={`rotate(${b.sunAngle + 180})`} />
+      </G>
+    );
+  };
 
   return (
     <View style={[styles.root, { width, height }]} {...responder.panHandlers} {...(webWheel as object)}>
@@ -242,18 +370,27 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
             <Stop offset="0.55" stopColor="#000" stopOpacity="0" />
             <Stop offset="1" stopColor="#000" stopOpacity="0.45" />
           </RadialGradient>
-          <RadialGradient id="moonShade" cx="40%" cy="35%" r="70%">
-            <Stop offset="0.6" stopColor="#000" stopOpacity="0" />
-            <Stop offset="1" stopColor="#000" stopOpacity="0.25" />
+          {/* a thin glow of atmosphere around the limb */}
+          <RadialGradient id="air" cx="50%" cy="50%" r="50%">
+            <Stop offset={1 / 1.035 - 0.01} stopColor={colors.air} stopOpacity="0.55" />
+            <Stop offset="1" stopColor={colors.air} stopOpacity="0" />
           </RadialGradient>
         </Defs>
 
-        {!mars.front && body(mars, marsR * 0.85, colors.mars, 'mars')}
-        {!moon.front && body(moon, moonR * 0.85, colors.moon, 'moon')}
+        {[...starPaths].map(([size, ds]) => (
+          <Path key={size} d={ds.join('')} fill={colors.white} opacity={Math.min(1, 0.35 + size * 0.5)} />
+        ))}
+        {bodies.filter((b) => !b.front && !b.eclipsed).map(drawBody)}
 
+        <Circle cx={cx} cy={cy} r={r * 1.035} fill="url(#air)" />
         <Circle cx={cx} cy={cy} r={r} fill={colors.ocean} />
         <Path d={landD} fill={colors.land} />
+        <Path d={desertD} fill={colors.desert} />
+        <Path d={iceD} fill={colors.ice} />
         <Path d={bordersD} fill="none" stroke={colors.landStroke} strokeWidth={0.6} />
+        {nightDs.map((d, i) => (
+          <Path key={i} d={d} fill={colors.night} opacity={0.075} />
+        ))}
         <Circle cx={cx} cy={cy} r={r} fill="url(#shade)" />
 
         {pin && (
@@ -264,13 +401,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
           </G>
         )}
 
-        {moon.front && (
-          <G>
-            {body(moon, moonR, colors.moon, 'moon')}
-            <Circle cx={moon.x} cy={moon.y} r={moonR} fill="url(#moonShade)" />
-          </G>
-        )}
-        {mars.front && body(mars, marsR, colors.mars, 'mars')}
+        {bodies.filter((b) => b.front).map(drawBody)}
       </Svg>
     </View>
   );
