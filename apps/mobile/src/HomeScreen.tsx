@@ -35,7 +35,6 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
   }, [revealed, intro]);
 
   const [street, setStreet] = useState(false);
-  const [locationOverlay, setLocationOverlay] = useState(false);
   const fade = useRef(new Animated.Value(0)).current;
   const keys = useRef(0);
   const [enter, setEnter] = useState<{ point: LatLng; key: number; scale?: number; streets?: boolean }>({ point: selected, key: 0 });
@@ -92,7 +91,7 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
         {street && <StatusBar style="dark" />}
 
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          {panel === 'location' && <LocationInterface top={top} onOverlay={setLocationOverlay} />}
+          {panel === 'location' && <LocationInterface top={top} />}
           {panel === 'orders' && (
             <OrdersInterface
               top={panelTop}
@@ -107,7 +106,7 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
         </View>
       </Animated.View>
 
-      <SideBar hidden={panel === 'location' && locationOverlay} top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} slideX={intro.interpolate({ inputRange: [0, 1], outputRange: [-60, 0] })} />
+      <SideBar top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} slideX={intro.interpolate({ inputRange: [0, 1], outputRange: [-60, 0] })} />
 
       <SearchInterface
         ref={searchRef}

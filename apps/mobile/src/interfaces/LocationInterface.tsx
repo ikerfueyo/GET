@@ -6,7 +6,7 @@
  * LI 8): Edit, Share and Save for Here or a searched place, Edit, Share and
  * Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import type { SavedLocation } from '@get/shared';
 import { BackIcon, ChevronIcon, CloseIcon, PlaceIcon, PlusIcon, SearchIcon } from '../components/Icons';
@@ -44,7 +44,7 @@ function LocationGlyph({ icon, selected, size = 34 }: { icon: Icon; selected: bo
 
 type Form = { kind: 'edit' | 'save' | 'delete'; loc: SavedLocation };
 
-export function LocationInterface({ top, onOverlay }: { top: number; onOverlay?: (open: boolean) => void }) {
+export function LocationInterface({ top }: { top: number }) {
   const { locations, selected, selectLocation, pickLocation, saveLocation, updateLocation, removeLocation } = useApp();
   const [mode, setMode] = useState<'strip' | 'search' | 'add'>('strip');
   const [query, setQuery] = useState('');
@@ -56,13 +56,6 @@ export function LocationInterface({ top, onOverlay }: { top: number; onOverlay?:
   const [menuLeft, setMenuLeft] = useState(0);
 
   const results = searchPlaces(query);
-
-  // the side bar sits where the menu and forms open, so it steps aside meanwhile
-  const overlay = !!menuFor || !!form;
-  useEffect(() => {
-    onOverlay?.(overlay);
-    return () => onOverlay?.(false);
-  }, [overlay, onOverlay]);
 
   const choose = (p: Place) => {
     if (mode === 'search') pickLocation(p, p.name, p.address);

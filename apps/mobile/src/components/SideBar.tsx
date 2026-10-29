@@ -11,18 +11,7 @@ import { CartIcon, PersonIcon, PinIcon } from './Icons';
 const IDLE_OPACITY = 0.45;
 
 /** `slideX` offsets the bar horizontally, for the Home Screen's entrance. */
-export function SideBar({
-  top,
-  bounds,
-  slideX,
-  hidden,
-}: {
-  top: number;
-  bounds: { width: number; height: number };
-  slideX?: Animated.AnimatedInterpolation<number>;
-  /** stays out of the way while a Location menu or form is open over it */
-  hidden?: boolean;
-}) {
+export function SideBar({ top, bounds, slideX }: { top: number; bounds: { width: number; height: number }; slideX?: Animated.AnimatedInterpolation<number> }) {
   const { panel, setPanel } = useApp();
   const pos = useRef(new Animated.ValueXY({ x: 10, y: top })).current;
   const opacity = useRef(new Animated.Value(1)).current;
@@ -87,10 +76,7 @@ export function SideBar({
   ];
 
   return (
-    <Animated.View
-      style={[styles.bar, { transform: [...pos.getTranslateTransform(), ...(slideX ? [{ translateX: slideX }] : [])], opacity }, hidden && { display: 'none' }]}
-      {...responder.panHandlers}
-    >
+    <Animated.View style={[styles.bar, { transform: [...pos.getTranslateTransform(), ...(slideX ? [{ translateX: slideX }] : [])], opacity }]} {...responder.panHandlers}>
       {items.map(({ key, Icon, label, accent }, i) => {
         const active = panel === key;
         return (
