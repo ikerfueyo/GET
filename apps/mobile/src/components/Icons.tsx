@@ -150,3 +150,57 @@ export function RobotIcon({ size = 22, color = '#000' }: IconProps) {
     </Svg>
   );
 }
+
+export function MessageIcon({ size = 18, color = '#000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 3C6.5 3 2 6.6 2 11c0 2.4 1.3 4.5 3.4 6L4.5 21l4.3-2.4c1 .3 2.1.4 3.2.4 5.5 0 10-3.6 10-8s-4.5-8-10-8z" fill={color} />
+    </Svg>
+  );
+}
+
+export function WhatsAppIcon({ size = 18, color = '#000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 2.5a9.5 9.5 0 0 0-8.2 14.3L2.5 21.5l4.8-1.3A9.5 9.5 0 1 0 12 2.5z" stroke={color} strokeWidth={1.8} fill="none" />
+      <Path d="M8.6 7.4c.3-.3.8-.3 1 .1l1 2c.1.3 0 .6-.2.8l-.6.6c.6 1.3 1.7 2.4 3 3l.6-.6c.2-.2.5-.3.8-.2l2 1c.4.2.4.7.1 1l-.8.8c-.6.6-1.5.7-2.3.4-2.6-1-4.6-3-5.6-5.6-.3-.8-.2-1.7.4-2.3z" fill={color} />
+    </Svg>
+  );
+}
+
+export function MailIcon({ size = 18, color = '#000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x={2.5} y={5} width={19} height={14} rx={2} stroke={color} strokeWidth={1.8} fill="none" />
+      <Path d="M3.5 6.5l8.5 6.5 8.5-6.5" stroke={color} strokeWidth={1.8} fill="none" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function MoreIcon({ size = 18, color = '#000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={5} cy={12} r={2.2} fill={color} />
+      <Circle cx={12} cy={12} r={2.2} fill={color} />
+      <Circle cx={19} cy={12} r={2.2} fill={color} />
+    </Svg>
+  );
+}
+
+export function CopyIcon({ size = 18, color = '#000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x={8} y={8} width={12} height={13} rx={2} stroke={color} strokeWidth={2} fill="none" />
+      <Path d="M16 5.5V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h.5" stroke={color} strokeWidth={2} fill="none" />
+    </Svg>
+  );
+}
+
+export function MapIcon({ size = 18, color = '#000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M3 6l6-2.5 6 2.5 6-2.5v14.5L15 20.5 9 18l-6 2.5z" stroke={color} strokeWidth={1.8} fill="none" strokeLinejoin="round" />
+      <Path d="M9 3.5V18M15 6v14.5" stroke={color} strokeWidth={1.8} />
+    </Svg>
+  );
+}

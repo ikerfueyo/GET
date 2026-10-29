@@ -66,6 +66,8 @@ type Props = {
   /** when the key changes the map flies to the point if it is out of view */
   focus: { point: LatLng; key: number };
   onExit?: (center: LatLng) => void;
+  /** a small capture (the Share card): the credits shrink to one line in the corner */
+  mini?: boolean;
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -74,7 +76,7 @@ const wrap = (x: number) => x - Math.floor(x);
 const worldPx = (zoom: number) => TILE * 2 ** zoom;
 const roadWidth = (base: number, zoom: number) => Math.max(0.8, base * 2 ** ((zoom - 16) * 0.8));
 
-export function StreetMap({ width, height, active, selected, enter, focus, onExit }: Props) {
+export function StreetMap({ width, height, active, selected, enter, focus, onExit, mini }: Props) {
   const start = toWorld(enter.point.lng, enter.point.lat);
   const view = useRef<View2>({ ...start, zoom: MIN_ZOOM });
   /** letting go below this zoom goes back to the globe */
@@ -479,7 +481,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           </G>
         )}
       </Svg>
-      <T style={[styles.attribution, streets < 0.5 && { color: colors.hairline }]} pointerEvents="none">
+      <T style={[styles.attribution, streets < 0.5 && { color: colors.hairline }, mini && styles.miniAttribution]} numberOfLines={mini ? 1 : undefined} pointerEvents="none">
         {streets < 0.5 && drawn < 0.5 ? SAT_ATTRIBUTION : ATTRIBUTION}
       </T>
     </View>
@@ -489,4 +491,5 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
 const styles = StyleSheet.create({
   root: { backgroundColor: colors.black, overflow: 'hidden' },
   attribution: { position: 'absolute', right: 8, bottom: 18, fontSize: 9, color: colors.muted },
+  miniAttribution: { left: 3, right: 3, bottom: 1, fontSize: 5 },
 });

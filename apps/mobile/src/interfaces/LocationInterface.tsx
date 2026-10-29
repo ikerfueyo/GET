@@ -6,10 +6,12 @@
  * LI 8): Edit, Share and Save for Here or a searched place, Edit, Share and
  * Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
  */
-import { useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
+import { useRef, useState, type ComponentType } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import { FlatList, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import { addressLines, type SavedLocation } from '@get/shared';
-import { BackIcon, ChevronIcon, CloseIcon, PlaceIcon, PlusIcon, SearchIcon } from '../components/Icons';
+import { BackIcon, ChevronIcon, CloseIcon, CopyIcon, MailIcon, MapIcon, MessageIcon, MoreIcon, PlaceIcon, PlusIcon, SearchIcon, WhatsAppIcon } from '../components/Icons';
+import { StreetMap } from '../components/StreetMap';
 import { T } from '../components/ui';
 import { searchPlaces, type Place } from '../places';
 import { useApp } from '../state/AppState';
@@ -42,7 +44,7 @@ function LocationGlyph({ icon, selected, size = 34 }: { icon: Icon; selected: bo
   );
 }
 
-type Form = { kind: 'edit' | 'save' | 'delete'; loc: SavedLocation };
+type Form = { kind: 'edit' | 'save' | 'delete' | 'share'; loc: SavedLocation };
 
 export function LocationInterface({ top }: { top: number }) {
   const { locations, selected, selectLocation, pickLocation, saveLocation, updateLocation, removeLocation } = useApp();
@@ -74,18 +76,22 @@ export function LocationInterface({ top }: { top: number }) {
   if (form) {
     return (
       <View style={[styles.wrap, { top }]}>
-        <LocationForm
-          form={form}
-          onCancel={() => setForm(null)}
-          onDone={(patch) => {
-            if (form.kind === 'edit') updateLocation(form.loc.id, patch);
-            else if (form.kind === 'save') {
-              const { id: _id, ...rest } = { ...form.loc, ...patch };
-              saveLocation({ ...rest, icon: patch.icon ?? 'pin' });
-            } else removeLocation(form.loc.id);
-            setForm(null);
-          }}
-        />
+        {form.kind === 'share' ? (
+          <LocationShare loc={form.loc} onCancel={() => setForm(null)} />
+        ) : (
+          <LocationForm
+            form={form}
+            onCancel={() => setForm(null)}
+            onDone={(patch) => {
+              if (form.kind === 'edit') updateLocation(form.loc.id, patch);
+              else if (form.kind === 'save') {
+                const { id: _id, ...rest } = { ...form.loc, ...patch };
+                saveLocation({ ...rest, icon: patch.icon ?? 'pin' });
+              } else removeLocation(form.loc.id);
+              setForm(null);
+            }}
+          />
+        )}
       </View>
     );
   }
@@ -193,8 +199,8 @@ export function LocationInterface({ top }: { top: number }) {
           <MenuItem
             label="Share"
             onPress={() => {
-              Share.share({ message: `${menuLoc.label}: ${menuLoc.address} (${menuLoc.lat.toFixed(5)}, ${menuLoc.lng.toFixed(5)})` }).catch(() => {});
               close();
+              setForm({ kind: 'share', loc: menuLoc });
             }}
           />
           {isCurrent(menuLoc) ? (
@@ -374,6 +380,102 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
   );
 }
 
+/**
+ * LI 5: share a location. The location's card (address on black, a capture of
+ * its streets) sits on top, then the apps to send it with and a few actions.
+ */
+function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => void }) {
+  const { showToast } = useApp();
+  const link = `https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}`;
+  const message = `${loc.label}\n${loc.address}\n${link}`;
+  const open = (url: string) =>
+    Linking.openURL(url).catch(() => showToast('That app is not on this phone.'));
+
+  const apps = [
+    { name: 'Messages', Icon: MessageIcon, go: () => open(`sms:${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(message)}`) },
+    { name: 'WhatsApp', Icon: WhatsAppIcon, go: () => open(`https://wa.me/?text=${encodeURIComponent(message)}`) },
+    { name: 'Mail', Icon: MailIcon, go: () => open(`mailto:?subject=${encodeURIComponent(`${loc.label} from GET`)}&body=${encodeURIComponent(message)}`) },
+    { name: 'More', Icon: MoreIcon, go: () => Share.share({ message }).catch(() => {}) },
+  ];
+  const actions = [
+    {
+      name: 'Copy',
+      Icon: CopyIcon,
+      go: () =>
+        Clipboard.setStringAsync(message)
+          .then(() => showToast('Location copied'))
+          .catch(() => showToast('Could not copy')),
+    },
+    { name: 'Open in Maps', Icon: MapIcon, go: () => open(Platform.OS === 'ios' ? `http://maps.apple.com/?ll=${loc.lat},${loc.lng}&q=${encodeURIComponent(loc.label)}` : link) },
+  ];
+  const mapView = useRef({ point: { lat: loc.lat, lng: loc.lng }, key: 1, streets: true }).current;
+
+  return (
+    <View style={styles.form}>
+      <View style={styles.formHead}>
+        <Pressable onPress={onCancel} hitSlop={8} style={styles.headBtn} accessibilityLabel="Cancel">
+          <T style={styles.headText}>Cancel</T>
+        </Pressable>
+        <View style={styles.headCenter}>
+          <LocationGlyph icon={loc.icon} selected size={34} />
+          <T numberOfLines={1} style={styles.headLabel}>
+            {loc.label}
+          </T>
+        </View>
+        <View style={styles.headBtn} />
+      </View>
+
+      <View style={styles.shareCard}>
+        <View style={styles.shareAddress}>
+          {addressLines(loc.address).map((line, i) => (
+            <T key={i} style={styles.shareAddressLine}>
+              {line}
+            </T>
+          ))}
+        </View>
+        <View style={styles.shareMap} pointerEvents="none">
+          <StreetMap width={SHARE_MAP_W} height={SHARE_MAP_H} active={false} selected={loc} enter={mapView} focus={mapView} mini />
+        </View>
+      </View>
+
+      <View style={styles.shareFrom}>
+        <View style={styles.shareFromIcon}>
+          <PlaceIcon icon={loc.icon} size={16} color={colors.white} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <T style={styles.shareFromTitle}>Location from GET</T>
+          <T numberOfLines={1} style={styles.shareFromSub}>
+            {link.replace('https://', '')}
+          </T>
+        </View>
+      </View>
+
+      <ShareRow items={apps} />
+      <ShareRow items={actions} outlined last />
+    </View>
+  );
+}
+
+function ShareRow({ items, outlined, last }: { items: { name: string; Icon: ComponentType<{ size?: number; color?: string }>; go: () => void }[]; outlined?: boolean; last?: boolean }) {
+  return (
+    <View style={[styles.shareRow, last && { borderBottomWidth: 0 }]}>
+      {items.map(({ name, Icon, go }) => (
+        <Pressable key={name} onPress={go} style={styles.shareItem} accessibilityLabel={name}>
+          <View style={[styles.shareCircle, outlined && styles.shareCircleOutlined]}>
+            <Icon size={22} color={outlined ? colors.black : colors.white} />
+          </View>
+          <T numberOfLines={1} style={styles.shareName}>
+            {name}
+          </T>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+const SHARE_MAP_W = 128;
+const SHARE_MAP_H = 104;
+
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: 10, right: 10, zIndex: 20 },
   strip: {
@@ -430,6 +532,19 @@ const styles = StyleSheet.create({
   doneBtn: { backgroundColor: colors.black, alignItems: 'center' },
   headText: { fontSize: 15 },
   deleteText: { fontSize: 13, textAlign: 'center', marginTop: 2 },
+  shareCard: { flexDirection: 'row', height: SHARE_MAP_H, marginTop: 12, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: colors.black },
+  shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 10 },
+  shareAddressLine: { color: colors.white, fontSize: 13, fontWeight: '600', lineHeight: 17 },
+  shareMap: { width: SHARE_MAP_W, height: SHARE_MAP_H, backgroundColor: colors.white },
+  shareFrom: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.black },
+  shareFromIcon: { width: 34, height: 34, borderRadius: 6, backgroundColor: colors.black, alignItems: 'center', justifyContent: 'center' },
+  shareFromTitle: { fontSize: 15, fontWeight: '700' },
+  shareFromSub: { fontSize: 11, color: colors.ink },
+  shareRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.black },
+  shareItem: { width: 70, alignItems: 'center' },
+  shareCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.black, alignItems: 'center', justifyContent: 'center' },
+  shareCircleOutlined: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.black },
+  shareName: { fontSize: 11, marginTop: 4 },
   headCenter: { alignItems: 'center', flex: 1, marginHorizontal: 6 },
   headLabel: { fontSize: 12, fontWeight: '700', marginTop: 2 },
   addressBlock: { marginTop: 22, marginBottom: 10 },
