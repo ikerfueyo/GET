@@ -1,19 +1,21 @@
 /**
- * Bakes the globe's map into equirectangular images (assets/earth-*.png), so
- * the GPU only wraps a picture around a sphere instead of re-drawing every
- * coastline each frame. Run after changing the map data or its colours:
- *   npx tsx scripts/bake-earth.ts
- * Colours mirror theme.ts (ocean, land, desert, ice, landStroke).
+ * Bakes the globe's map for the GPU, in two steps:
+ *   npx tsx scripts/bake-earth.ts           draws 8192×4096 masks of land, desert,
+ *                                           ice and borders into scripts/.masks/
+ *   python3 scripts/bake-sdf.py             turns them into distance fields:
+ *                                           assets/earth-sdf.png and earth-borders.png
+ * (bake-sdf.py needs numpy, scipy and pillow.) Each texel stores how far it is
+ * from the nearest edge, so the shader can cut edges sharply at any zoom
+ * instead of stretching a picture. Re-run after changing surfaces.json.
  */
 import { geoEquirectangular, geoPath } from 'd3-geo';
-import { writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 import { createRequire } from 'module';
 import { feature, mesh } from 'topojson-client';
 import countries from 'world-atlas/countries-110m.json';
 import surfaces from '../src/components/surfaces.json';
 
-const COLORS = { ocean: '#2D5BC4', land: '#2E7D4F', desert: '#C8B27A', ice: '#FFFFFF', border: '#256A42' };
-export const SIZES = [1024, 2048, 4096];
+const W = 8192;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const c = countries as any, s = surfaces as any;
@@ -26,35 +28,34 @@ const layers = {
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 (async () => {
+  mkdirSync('scripts/.masks', { recursive: true });
   const browser = await chromium.launch();
   const page = await browser.newPage();
-  for (const w of SIZES) {
-    const path = geoPath(geoEquirectangular().scale(w / (2 * Math.PI)).translate([w / 2, w / 4]).precision(0.1));
-    const d = Object.fromEntries(Object.entries(layers).map(([k, v]) => [k, path(v as never) ?? '']));
+  const path = geoPath(geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, W / 4]).precision(0.05));
+  for (const [name, layer] of Object.entries(layers)) {
+    const d = path(layer as never) ?? '';
     const png: string = await page.evaluate(
-      ({ w, d, col }: { w: number; d: Record<string, string>; col: typeof COLORS }) => {
+      ({ W, d, name }: { W: number; d: string; name: string }) => {
         const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = w / 2;
+        canvas.width = W;
+        canvas.height = W / 2;
         const g = canvas.getContext('2d')!;
-        g.fillStyle = col.ocean;
-        g.fillRect(0, 0, w, w / 2);
-        for (const k of ['land', 'desert', 'ice'] as const) {
-          g.fillStyle = col[k];
-          g.fill(new Path2D(d[k]));
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, W, W / 2);
+        g.fillStyle = g.strokeStyle = '#fff';
+        if (name === 'borders') {
+          g.lineWidth = 1;
+          g.stroke(new Path2D(d));
+        } else {
+          g.fill(new Path2D(d));
+          // Antarctica's edge along the South Pole doesn't quite reach the bottom row
+          if (name === 'land' || name === 'ice') g.fillRect(0, (W / 2) * (174 / 180), W, W / 2);
         }
-        // the polygon's edge along the South Pole doesn't quite reach the bottom row
-        g.fillStyle = col.ice;
-        g.fillRect(0, (w / 2) * (174 / 180), w, w / 2);
-        // about 0.6 px on screen at the zoom each size is used for
-        g.strokeStyle = col.border;
-        g.lineWidth = 0.7;
-        g.stroke(new Path2D(d.borders));
         return canvas.toDataURL('image/png').split(',')[1];
       },
-      { w, d, col: COLORS },
+      { W, d, name },
     );
-    writeFileSync(`assets/earth-${w}.png`, Buffer.from(png, 'base64'));
+    writeFileSync(`scripts/.masks/${name}.png`, Buffer.from(png, 'base64'));
   }
   await browser.close();
 })();

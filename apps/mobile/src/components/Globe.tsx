@@ -6,9 +6,9 @@
  * changes from the Location Interface. Zooming in past the
  * globe's closest view (or tapping the pin) dives into the street map, HS 2.
  *
- * Drawn on the GPU with Skia (bundled in Expo Go): the map is baked into an
- * equirectangular image (scripts/bake-earth.ts) and a small shader wraps it
- * around the sphere and shades the real night side, so turning the globe only
+ * Drawn on the GPU with Skia (bundled in Expo Go): the map is baked into
+ * equirectangular distance fields (scripts/bake-earth.ts) and a small shader
+ * wraps them around the sphere and shades the real night side, so turning the globe only
  * changes a few numbers per frame. The stars are seen through a perspective
  * camera floating above the point at the centre.
  */
@@ -30,49 +30,81 @@ import {
 } from '@shopify/react-native-skia';
 import { geoDistance, geoOrthographic } from 'd3-geo';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { PanResponder, PixelRatio, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import type { LatLng } from '@get/shared';
 import { colors } from '../theme';
 import { MOON_RADIUS, dotRadius, skyAt, starsAt, type Vec } from './sky';
 
-// The map, baked at three sizes; the globe uses the smallest that is about as
-// sharp as the screen at the current zoom. Ice (Natural Earth 1:50m glaciated
-// areas, plus every landmass that is mostly ice or south of 60°S) and deserts
-// come from surfaces.json, the land and borders from world-atlas 110m.
-const EARTH_IMAGES = {
-  1024: require('../../assets/earth-1024.png'),
-  2048: require('../../assets/earth-2048.png'),
-  4096: require('../../assets/earth-4096.png'),
-};
+// The map, baked as distance fields (scripts/bake-earth.ts, bake-sdf.py): each
+// texel holds how far it is from the nearest coast, desert edge, ice edge
+// (earth-sdf, one per channel) and country border (earth-borders). The shader
+// cuts the edges where the distance is zero, so they stay sharp at any zoom on
+// any screen. Ice (Natural Earth 1:50m glaciated areas, plus every landmass
+// that is mostly ice or south of 60°S) and deserts come from surfaces.json, the
+// land and borders from world-atlas 110m.
+const SDF_IMAGE = require('../../assets/earth-sdf.png');
+const BORDERS_IMAGE = require('../../assets/earth-borders.png');
+const MAP_W = 4096;
+const MAP_H = 2048;
 
 // Wraps the map around the sphere seen from straight above `P` (north up,
 // east right), darkens the side away from the Sun in two bands like twilight,
-// and softens the rim to one pixel.
+// and softens the rim to one pixel. `px` is a screen pixel in points.
 const EARTH = Skia.RuntimeEffect.Make(`
-uniform shader map;
+uniform shader sdf;
+uniform shader borders;
 uniform float2 center;
 uniform float radius;
+uniform float px;
 uniform float3 P;
 uniform float3 R;
 uniform float3 U;
 uniform float3 sun;
-uniform float2 size;
+uniform float3 ocean;
+uniform float3 land;
+uniform float3 desert;
+uniform float3 ice;
+uniform float3 border;
 uniform float3 night;
+
+const float TEXELS_PER_RAD = ${MAP_W / (2 * Math.PI)};
+
+// share of a pixel fp texels wide covered by the inside of an edge d texels away
+float cover(float d, float fp) { return clamp(d / fp + 0.5, 0.0, 1.0); }
 
 half4 main(float2 xy) {
   float2 q = (xy - center) / radius;
   float d2 = dot(q, q);
   if (d2 >= 1.0) return half4(0);
-  float3 n = q.x * R - q.y * U + sqrt(1.0 - d2) * P;
+  float z = sqrt(1.0 - d2);
+  float3 n = q.x * R - q.y * U + z * P;
   float lat = asin(clamp(n.z, -1.0, 1.0));
   float lng = atan(n.y, n.x);
-  half4 c = map.eval(float2((lng / 6.2831853 + 0.5) * size.x, (0.5 - lat / 3.1415927) * size.y));
+  float2 uv = float2((lng / 6.2831853 + 0.5) * ${MAP_W}.0, (0.5 - lat / 3.1415927) * ${MAP_H}.0);
+
+  // one screen pixel in texels, wider towards the rim and the poles
+  float perPoint = TEXELS_PER_RAD / radius;
+  float fp = perPoint * px / max(z, 0.12) / sqrt(max(cos(lat), 0.12));
+
+  half3 a = sdf.eval(uv).rgb;
+  float3 dist = (float3(a) * 255.0 - 128.0) / 16.0;
+  float3 c = ocean;
+  c = mix(c, land, cover(dist.r, fp));
+  c = mix(c, desert, cover(dist.g, fp));
+  c = mix(c, ice, cover(dist.b, fp));
+
+  // borders 0.6 points wide: the part of this pixel that overlaps the line
+  float bd = float(borders.eval(uv).r) * 255.0 / 64.0;
+  float h = 0.3 * perPoint;
+  float line = clamp(min(h, bd + fp * 0.5) - max(-h, bd - fp * 0.5), 0.0, fp) / fp;
+  c = mix(c, border, line * cover(dist.r, fp));
+
   float s = dot(n, sun);
-  if (s < 0.0) c.rgb = mix(c.rgb, half3(night), 0.2);
-  if (s < -0.1564) c.rgb = mix(c.rgb, half3(night), 0.2); // 9° past the terminator
-  float edge = clamp((1.0 - sqrt(d2)) * radius, 0.0, 1.0);
-  return half4(c.rgb, 1.0) * edge;
+  if (s < 0.0) c = mix(c, night, 0.2);
+  if (s < -0.1564) c = mix(c, night, 0.2); // 9° past the terminator
+  float edge = clamp((1.0 - sqrt(d2)) * radius / px, 0.0, 1.0);
+  return half4(half3(c), 1.0) * half(edge);
 }`)!;
 
 const PIN_BOX = 24;
@@ -411,15 +443,11 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
     );
   };
 
-  // the map image sharp enough for this zoom: about one texel per pixel at the centre
-  const mapSize = r * 2 * Math.PI < 1400 ? 1024 : r * 2 * Math.PI < 2800 ? 2048 : 4096;
-  const images = {
-    1024: useImage(EARTH_IMAGES[1024]),
-    2048: useImage(EARTH_IMAGES[2048]),
-    4096: useImage(EARTH_IMAGES[4096]),
-  };
-  const map = images[mapSize] ?? images[2048] ?? images[1024];
+  const sdf = useImage(SDF_IMAGE);
+  const borderMap = useImage(BORDERS_IMAGE);
   const sunDir = normalize(sky.sun);
+  const mapRect = { x: 0, y: 0, width: MAP_W, height: MAP_H };
+  const sampling = { filter: FilterMode.Linear, mipmap: MipmapMode.None };
 
   return (
     <View style={[styles.root, { width, height }]} {...responder.panHandlers} {...(webWheel as object)}>
@@ -438,29 +466,28 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
             positions={[1 / 1.035 - 0.01, 1]}
           />
         </Circle>
-        {map ? (
+        {sdf && borderMap ? (
           <Fill>
             <Shader
               source={EARTH}
               uniforms={{
                 center: [cx, cy],
                 radius: r,
+                px: 1 / PixelRatio.get(),
                 P,
                 R,
                 U,
                 sun: sunDir,
-                size: [mapSize, mapSize / 2],
+                ocean: hex(colors.ocean),
+                land: hex(colors.land),
+                desert: hex(colors.desert),
+                ice: hex(colors.ice),
+                border: hex(colors.landStroke),
                 night: hex(colors.night),
               }}
             >
-              <ImageShader
-                image={map}
-                tx="repeat"
-                ty="clamp"
-                fit="fill"
-                rect={{ x: 0, y: 0, width: mapSize, height: mapSize / 2 }}
-                sampling={{ filter: FilterMode.Linear, mipmap: MipmapMode.None }}
-              />
+              <ImageShader image={sdf} tx="repeat" ty="clamp" fit="fill" rect={mapRect} sampling={sampling} />
+              <ImageShader image={borderMap} tx="repeat" ty="clamp" fit="fill" rect={mapRect} sampling={sampling} />
             </Shader>
           </Fill>
         ) : (
