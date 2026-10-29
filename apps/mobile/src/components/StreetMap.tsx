@@ -15,11 +15,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
-import { geoMercator, geoPath, type GeoPermissibleObjects } from 'd3-geo';
+import { geoCircle, geoMercator, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import Svg, { Circle, Ellipse, G, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { feature } from 'topojson-client';
 import type { LatLng } from '@get/shared';
 import { colors, fonts } from '../theme';
+import { skyAt } from './sky';
 import surfaces from './surfaces.json';
 import { T } from './ui';
 import { ATTRIBUTION, BUILDINGS_ZOOM, ROADS, TILE_MAX_ZOOM, fromWorld, getBuildings, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
@@ -348,6 +349,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   );
   let iceD = '';
   let desertD = '';
+  let nightDs: string[] = [];
   if (enter.key && drawn > 0) {
     const Wd = worldPx(zoom);
     const mercator = geoMercator()
@@ -360,6 +362,13 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
     const path = geoPath(mercator);
     iceD = path(ICE) ?? '';
     desertD = path(DESERT) ?? '';
+    // the globe's night side, in the same two bands, so the colours carry over
+    const sun = skyAt(new Date(Math.floor(Date.now() / 60_000) * 60_000)).sun;
+    const antiSun: [number, number] = [
+      (Math.atan2(-sun[1], -sun[0]) * 180) / Math.PI,
+      (Math.asin(-sun[2] / Math.hypot(...sun)) * 180) / Math.PI,
+    ];
+    nightDs = [90, 81].map((radius) => path(geoCircle().center(antiSun).radius(radius)()) ?? '');
   }
 
   const sel = toWorld(selected.lng, selected.lat);
@@ -438,6 +447,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
             {!!iceD && <Path d={iceD} fill={colors.ice} />}
             {below.map(drawTileDrawn)}
             {tiles.map(drawTileDrawn)}
+            {nightDs.map((d, i) => (d ? <Path key={i} d={d} fill={colors.night} opacity={0.2} /> : null))}
           </G>
         )}
         {streets > 0 && (
