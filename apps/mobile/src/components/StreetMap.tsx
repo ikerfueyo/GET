@@ -20,11 +20,8 @@ import Svg, { Circle, Ellipse, G, Path, Rect, Text as SvgText } from 'react-nati
 import { feature } from 'topojson-client';
 import type { LatLng, SavedLocation } from '@get/shared';
 import { colors, fonts } from '../theme';
-<<<<<<< HEAD
 import { placeShapes } from './Icons';
-=======
 import { skyAt } from './sky';
->>>>>>> origin/claude/project-thread-09ymw9-gpu-globe
 import surfaces from './surfaces.json';
 import { T } from './ui';
 import { ATTRIBUTION, BUILDINGS_ZOOM, ROADS, TILE_MAX_ZOOM, fromWorld, getBuildings, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
