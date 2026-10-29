@@ -8,7 +8,7 @@
  */
 import { useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
-import type { SavedLocation } from '@get/shared';
+import { addressLines, type SavedLocation } from '@get/shared';
 import { BackIcon, ChevronIcon, CloseIcon, PlaceIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { T } from '../components/ui';
 import { searchPlaces, type Place } from '../places';
@@ -242,7 +242,6 @@ function MenuItem({ label, onPress, danger, last }: { label: string; onPress: ()
 function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => void; onDone: (patch: Partial<Omit<SavedLocation, 'id'>>) => void }) {
   const { kind, loc } = form;
   const firstLine = loc.address.split(',')[0].trim();
-  const [address, setAddress] = useState(loc.address);
   const [building, setBuilding] = useState<Building | undefined>(loc.buildingType);
   const [pickBuilding, setPickBuilding] = useState(false);
   const [details, setDetails] = useState(loc.details ?? '');
@@ -257,14 +256,18 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
       <Pressable onPress={onCancel} hitSlop={8} style={styles.headBtn} accessibilityLabel="Cancel">
         <T style={styles.headText}>Cancel</T>
       </Pressable>
-      <LocationGlyph icon={shown} selected size={34} />
+      <View style={styles.headCenter}>
+        <LocationGlyph icon={shown} selected size={34} />
+        <T numberOfLines={1} style={styles.headLabel}>
+          {(withLabel && name.trim()) || loc.label}
+        </T>
+      </View>
       <Pressable
         onPress={() =>
           onDone(
             kind === 'delete'
               ? {}
               : {
-                  address: address.trim() || loc.address,
                   buildingType: building,
                   details: details.trim() || undefined,
                   ...(withLabel ? { icon, label: name.trim() || LABEL_ICONS.find((l) => l.icon === icon)?.name || loc.label } : {}),
@@ -295,7 +298,14 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
     <View style={styles.form}>
       {header}
       <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
-        <TextInput value={address} onChangeText={setAddress} multiline style={styles.addressInput} accessibilityLabel="Address" />
+        {/* the address comes from the map, so it is shown, not edited */}
+        <View style={styles.addressBlock} accessibilityLabel={`Address: ${loc.address}`}>
+          {addressLines(loc.address).map((line, i) => (
+            <T key={i} style={styles.addressLine}>
+              {line}
+            </T>
+          ))}
+        </View>
 
         <T style={styles.fieldLabel}>Building type</T>
         <Pressable onPress={() => setPickBuilding((v) => !v)} style={styles.field} accessibilityLabel="Building type">
@@ -417,12 +427,15 @@ const styles = StyleSheet.create({
   menuItem: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.hairline },
   menuText: { fontSize: 15 },
   form: { backgroundColor: colors.panel, borderRadius: 10, borderWidth: 1, borderColor: colors.black, padding: 10 },
-  formHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  formHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headBtn: { minWidth: 64, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6 },
   doneBtn: { backgroundColor: colors.black, alignItems: 'center' },
   headText: { fontSize: 15 },
   deleteText: { fontSize: 13, textAlign: 'center', marginTop: 2 },
-  addressInput: { fontSize: 15, fontFamily: fonts.sans, color: colors.ink, paddingVertical: 4 },
+  headCenter: { alignItems: 'center', flex: 1, marginHorizontal: 6 },
+  headLabel: { fontSize: 12, fontWeight: '700', marginTop: 2 },
+  addressBlock: { marginTop: 14, marginBottom: 10 },
+  addressLine: { fontSize: 15, fontWeight: '600', lineHeight: 20 },
   fieldLabel: { fontSize: 15, fontWeight: '600', marginTop: 10, marginBottom: 4 },
   field: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.white, borderRadius: 6, borderWidth: 1, borderColor: colors.black, paddingHorizontal: 10, height: 38 },
   fieldText: { fontSize: 15, fontFamily: fonts.sans, color: colors.ink },

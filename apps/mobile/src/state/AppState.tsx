@@ -176,10 +176,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
         const pos = await Location.getCurrentPositionAsync({});
-        setLocations((ls) =>
-          ls.map((l) => (l.id === 'loc_here' ? { ...l, lat: pos.coords.latitude, lng: pos.coords.longitude, address: 'Current location' } : l)),
-        );
+        const { latitude, longitude } = pos.coords;
+        setLocations((ls) => ls.map((l) => (l.id === 'loc_here' ? { ...l, lat: latitude, lng: longitude, address: 'Current location' } : l)));
         setFocusKey((k) => k + 1);
+        // then the street address, ending with the country (the phone's geocoder; not on web)
+        const [g] = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
+        const street = g && [g.streetNumber, g.street].filter(Boolean).join(' ');
+        const region = g && [g.region, g.postalCode].filter(Boolean).join(' ');
+        const address = g && [street || g.name, g.city, region, g.country].filter(Boolean).join(', ');
+        if (address) setLocations((ls) => ls.map((l) => (l.id === 'loc_here' ? { ...l, address } : l)));
       } catch {
         // keep the default "Here"
       }

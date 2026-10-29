@@ -5,3 +5,4 @@ export * from './db';
 export * from './engine';
 export * from './checkout';
 export * from './assistant';
+export * from './address';

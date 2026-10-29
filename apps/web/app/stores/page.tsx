@@ -1,4 +1,4 @@
-import { OFFERS, STORES } from '@get/shared';
+import { OFFERS, STORES, storeAddress } from '@get/shared';
 import { ensureCatalog } from '../../lib/catalog';
 
 // read from Supabase on each request, never at build time
@@ -21,7 +21,7 @@ export default async function Stores() {
             <tr key={s.id}>
               <td>{s.name}{s.verified ? <span className="ok"> ✓</span> : null}</td>
               <td>{s.kind === 'online' ? 'Online' : s.category}</td>
-              <td>{s.address}, {s.city}, {s.country}</td>
+              <td>{storeAddress(s)}</td>
               <td>{s.currency}</td>
               <td className="num">{s.rating.toFixed(1)}</td>
               <td>{s.hasPickup ? 'Yes' : '—'}</td>

@@ -2,7 +2,7 @@
  * A small offline gazetteer for the Location Search Interface (LI 11).
  * Swap for a geocoding API (Mapbox, Google Places) once there is a key.
  */
-import { STORES, type LatLng } from '@get/shared';
+import { STORES, storeAddress, type LatLng } from '@get/shared';
 
 export interface Place extends LatLng {
   name: string;
@@ -16,15 +16,15 @@ const CITIES: Place[] = [
   ['San Francisco', 'California, United States', 37.7749, -122.4194],
   ['Los Angeles', 'California, United States', 34.0522, -118.2437],
   ['Miami', 'Florida, United States', 25.7617, -80.1918],
-  ['Ciudad de México', 'México', 19.4326, -99.1332],
-  ['Monterrey', 'Nuevo León, México', 25.6866, -100.3161],
-  ['Guadalajara', 'Jalisco, México', 20.6597, -103.3496],
+  ['Ciudad de México', 'Mexico', 19.4326, -99.1332],
+  ['Monterrey', 'Nuevo León, Mexico', 25.6866, -100.3161],
+  ['Guadalajara', 'Jalisco, Mexico', 20.6597, -103.3496],
   ['Toronto', 'Ontario, Canada', 43.6532, -79.3832],
   ['Bogotá', 'Colombia', 4.711, -74.0721],
-  ['São Paulo', 'Brasil', -23.5505, -46.6333],
+  ['São Paulo', 'Brazil', -23.5505, -46.6333],
   ['Buenos Aires', 'Argentina', -34.6037, -58.3816],
-  ['Madrid', 'España', 40.4168, -3.7038],
-  ['Barcelona', 'España', 41.3874, 2.1686],
+  ['Madrid', 'Spain', 40.4168, -3.7038],
+  ['Barcelona', 'Spain', 41.3874, 2.1686],
   ['London', 'United Kingdom', 51.5072, -0.1276],
   ['Paris', 'France', 48.8566, 2.3522],
   ['Berlin', 'Germany', 52.52, 13.405],
@@ -45,7 +45,7 @@ const CITIES: Place[] = [
 const storePlaces = (): Place[] =>
   STORES.filter((s) => s.kind === 'physical').map((s) => ({
     name: s.name,
-    address: `${s.address}, ${s.city}`,
+    address: storeAddress(s),
     lat: s.lat,
     lng: s.lng,
   }));
