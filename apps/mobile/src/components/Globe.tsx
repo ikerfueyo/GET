@@ -139,7 +139,7 @@ export function Globe({ width, height, selected, focus, onPick, onDive }: Props)
             const want = (gesture.current.zoom * d) / gesture.current.pinch;
             view.current.zoom = clamp(want, MIN_ZOOM, MAX_ZOOM);
             gesture.current.moved = true;
-            if (want > MAX_ZOOM * 1.2 && !gesture.current.dived) {
+            if (want > MAX_ZOOM * 1.1 && !gesture.current.dived) {
               gesture.current.dived = true;
               dive();
             }
