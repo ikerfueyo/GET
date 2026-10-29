@@ -351,11 +351,7 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
                 return (
                   <Pressable
                     key={l.icon}
-                    onPress={() => {
-                      // a name that was just the previous label follows the new one
-                      if (LABEL_ICONS.some((x) => x.name === name)) setName(l.name === 'Other' ? (kind === 'save' ? firstLine : loc.label) : l.name);
-                      setIcon(l.icon);
-                    }}
+                    onPress={() => setIcon(l.icon)}
                     style={[styles.chip, on && { backgroundColor: colors.black }]}
                     accessibilityLabel={l.name}
                   >

@@ -169,26 +169,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // "Here" follows the phone's GPS when the user allows it.
+  // "Here" follows the phone's GPS while the app is open, when the user allows it.
   useEffect(() => {
+    let sub: { remove: () => void } | null = null;
+    let cancelled = false;
+    let first = true;
+    let geocoding = 0; // only the latest fix's address is kept
+    const setHere = (patch: Partial<SavedLocation>) => setLocations((ls) => ls.map((l) => (l.id === 'loc_here' ? { ...l, ...patch } : l)));
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        const pos = await Location.getCurrentPositionAsync({});
-        const { latitude, longitude } = pos.coords;
-        setLocations((ls) => ls.map((l) => (l.id === 'loc_here' ? { ...l, lat: latitude, lng: longitude, address: 'Current location' } : l)));
-        setFocusKey((k) => k + 1);
-        // then the street address, ending with the country (the phone's geocoder; not on web)
-        const [g] = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
-        const street = g && [g.streetNumber, g.street].filter(Boolean).join(' ');
-        const region = g && [g.region, g.postalCode].filter(Boolean).join(' ');
-        const address = g && [street || g.name, g.city, region, g.country].filter(Boolean).join(', ');
-        if (address) setLocations((ls) => ls.map((l) => (l.id === 'loc_here' ? { ...l, address } : l)));
+        if (status !== 'granted' || cancelled) return;
+        sub = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 20, timeInterval: 5000 }, async (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setHere(first ? { lat: latitude, lng: longitude, address: 'Current location' } : { lat: latitude, lng: longitude });
+          if (first) setFocusKey((k) => k + 1); // fly there once; after that only the pin moves
+          first = false;
+          // then the street address, ending with the country (the phone's geocoder; not on web)
+          const n = ++geocoding;
+          const [g] = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
+          const street = g && [g.streetNumber, g.street].filter(Boolean).join(' ');
+          const region = g && [g.region, g.postalCode].filter(Boolean).join(' ');
+          const address = g && [street || g.name, g.city, region, g.country].filter(Boolean).join(', ');
+          if (address && n === geocoding) setHere({ address });
+        });
+        if (cancelled) sub.remove();
       } catch {
         // keep the default "Here"
       }
     })();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
   }, []);
 
   const allLocations = useMemo(() => (picked ? [picked, ...locations] : locations), [picked, locations]);
