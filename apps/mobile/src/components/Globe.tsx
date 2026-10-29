@@ -32,8 +32,12 @@ type Props = {
   /** when this object changes the globe flies to it */
   focus?: { point: LatLng; zoom?: number; key: number };
   onPick?: (point: LatLng) => void;
-  /** zoomed in past MAX_ZOOM: time for the street map */
-  onDive?: (center: LatLng) => void;
+  /**
+   * zoomed in past MAX_ZOOM: time for the flat map. `scale` is the globe's
+   * radius in px, so the map can open at the same scale; `byPin` is set when
+   * the pin was tapped, which goes all the way down to the streets.
+   */
+  onDive?: (center: LatLng, scale: number, byPin: boolean) => void;
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -86,9 +90,9 @@ export function Globe({ width, height, selected, focus, onPick, onDive }: Props)
     anim.current = requestAnimationFrame(step);
   };
 
-  const dive = () => {
-    const { lambda: l, phi: p } = view.current;
-    latest.current.onDive?.({ lng: -l, lat: -p });
+  const dive = (byPin = false) => {
+    const { lambda: l, phi: p, zoom: z } = view.current;
+    latest.current.onDive?.({ lng: -l, lat: -p }, baseR * z, byPin);
   };
 
   useEffect(() => {
@@ -183,7 +187,7 @@ export function Globe({ width, height, selected, focus, onPick, onDive }: Props)
     if (p && Math.hypot(p[0] - x, p[1] - y) < 26) {
       // "Location is zoomed into upon touch"
       const ll = proj.invert?.([p[0], p[1]]);
-      if (ll) flyTo({ lng: ll[0], lat: ll[1] }, MAX_ZOOM, dive);
+      if (ll) flyTo({ lng: ll[0], lat: ll[1] }, MAX_ZOOM, () => dive(true));
       return;
     }
     if (Math.hypot(x - X, y - Y) > R) return; // tapped space

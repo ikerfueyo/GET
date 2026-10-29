@@ -1,15 +1,18 @@
 /**
- * HS 2: the street-level map you reach by zooming into the globe. White ground,
- * thick black streets with their names in white, the selected location as the
- * red ring, as in Sketches/Home Screen.png.
+ * The flat map you reach by zooming into the globe. It opens at the globe's
+ * scale as a satellite view from above (land, water, mountains, like Google
+ * Earth) and, once you reach street level, turns into HS 2 from
+ * Sketches/Home Screen.png: white ground, thick black streets with their names
+ * in white. The selected location stays the red ring the whole way down.
  *
- * Streets come from OpenStreetMap vector tiles (see ./tiles) and are drawn with
- * react-native-svg, so it looks the same in Expo Go and on the web and needs no
- * map SDK or API key. Drag to pan, pinch (or mouse wheel) to zoom, tap to pick a
- * location; pinching out far enough hands back to the globe.
+ * Imagery is Esri World Imagery; streets are OpenStreetMap vector tiles (see
+ * ./tiles) drawn with react-native-svg. Neither needs a map SDK or API key, so it
+ * looks the same in Expo Go and on the web. Drag to pan, pinch (or mouse wheel)
+ * to zoom, tap to pick a location; pinching back out past where you came in
+ * hands back to the globe.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { Image, PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Ellipse, G, Path, Text as SvgText } from 'react-native-svg';
 import type { LatLng } from '@get/shared';
 import { colors, fonts } from '../theme';
@@ -17,13 +20,17 @@ import { T } from './ui';
 import { ATTRIBUTION, ROADS, TILE_MAX_ZOOM, fromWorld, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
 
 const TILE = 512; // screen px of a tile at its own zoom, as in MapLibre
-const MIN_ZOOM = 11;
+const MIN_ZOOM = 2;
 const MAX_ZOOM = 19;
-/** where a dive from the globe starts and lands */
-export const ENTER_FROM = 12;
-export const ENTER_TO = 15.6;
-/** letting go below this zoom goes back to the globe */
-const EXIT_ZOOM = 12.2;
+/** tapping the pin on the globe flies all the way down to here */
+const PIN_ZOOM = 16;
+/** the satellite view gives way to the black-and-white streets between these */
+const STREETS_FROM = 14.4;
+const STREETS_FULL = 15.4;
+
+const SATELLITE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
+const SAT_MAX_ZOOM = 18;
+const SAT_ATTRIBUTION = 'Esri, Maxar, Earthstar Geographics';
 
 type View2 = { x: number; y: number; zoom: number };
 
@@ -32,8 +39,11 @@ type Props = {
   height: number;
   active: boolean;
   selected: LatLng;
-  /** when the key changes the map opens on this point, zooming in from ENTER_FROM */
-  enter: { point: LatLng; key: number };
+  /**
+   * when the key changes the map opens on this point at the globe's scale
+   * (its radius in px); with `streets` it then flies down to street level
+   */
+  enter: { point: LatLng; key: number; scale?: number; streets?: boolean };
   /** when the key changes the map flies to the point if it is out of view */
   focus: { point: LatLng; key: number };
   onPick?: (point: LatLng) => void;
@@ -48,7 +58,9 @@ const roadWidth = (base: number, zoom: number) => Math.max(0.8, base * 2 ** ((zo
 
 export function StreetMap({ width, height, active, selected, enter, focus, onPick, onExit }: Props) {
   const start = toWorld(enter.point.lng, enter.point.lat);
-  const view = useRef<View2>({ ...start, zoom: ENTER_TO });
+  const view = useRef<View2>({ ...start, zoom: MIN_ZOOM });
+  /** letting go below this zoom goes back to the globe */
+  const exitBelow = useRef(MIN_ZOOM);
   const [, setFrame] = useState(0);
   const redraw = () => setFrame((f) => (f + 1) % 1_000_000);
   const anim = useRef<number | null>(null);
@@ -87,7 +99,16 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
     if (!enter.key) return;
     enteredAt.current = Date.now();
     const p = toWorld(enter.point.lng, enter.point.lat);
-    animate({ ...p, zoom: ENTER_TO }, 1100, { ...p, zoom: ENTER_FROM });
+    // the zoom whose ground scale matches the globe's at this latitude
+    const cos = Math.cos((enter.point.lat * Math.PI) / 180);
+    const z0 = enter.scale ? clamp(Math.log2((2 * Math.PI * enter.scale * cos) / TILE), MIN_ZOOM + 0.6, 12) : 12;
+    exitBelow.current = z0 - 0.5;
+    if (enter.streets) animate({ ...p, zoom: PIN_ZOOM }, 1800, { ...p, zoom: z0 });
+    else {
+      stopAnim();
+      view.current = { ...p, zoom: z0 };
+      redraw();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enter.key]);
 
@@ -100,7 +121,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
     if (dx < -W / 2) dx += W;
     const dy = (p.y - view.current.y) * W;
     if (Math.abs(dx) < width * 0.38 && Math.abs(dy) < height * 0.38) return; // already in view
-    animate({ ...p, zoom: Math.max(view.current.zoom, 14) }, 900);
+    animate({ ...p, zoom: view.current.zoom }, 900);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus.key]);
 
@@ -170,7 +191,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
             latest.current.onPick?.(fromWorld(wrap(p.x), p.y));
             return;
           }
-          if (view.current.zoom < EXIT_ZOOM) return exit();
+          if (view.current.zoom < exitBelow.current) return exit();
           if (g.current.mode !== 'pan') return;
           // a little inertia after a flick
           let vx = gs.vx * 16;
@@ -200,7 +221,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
             if (Date.now() - enteredAt.current < 1200) return;
             stopAnim();
             const zoom = view.current.zoom - e.deltaY * 0.003;
-            if (zoom < MIN_ZOOM) {
+            if (zoom < exitBelow.current) {
               // keep scrolling out past the edge to go back to the globe
               wheelOut.current += e.deltaY;
               if (wheelOut.current > 240) {
@@ -230,7 +251,8 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
   const below: Placed[] = []; // coarser tiles standing in while the right ones load
   const tiles: Placed[] = [];
   const seen = new Set<string>();
-  if (enter.key) {
+  const streets = clamp((zoom - STREETS_FROM) / (STREETS_FULL - STREETS_FROM), 0, 1);
+  if (enter.key && streets > 0) {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const ox = width / 2 + (tx - cxT) * ts;
@@ -316,9 +338,39 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
     }
   }
 
+  // satellite imagery, with a coarser layer underneath while the sharp tiles load
+  const satellite = (z: number) => {
+    const sn = 2 ** z;
+    const size = (TILE / 2) * 2 ** (zoom + 1 - z); // Esri tiles are 256 px
+    const out: { key: string; uri: string; left: number; top: number; size: number }[] = [];
+    const sx = cxW * sn;
+    const sy = cyW * sn;
+    for (let ty = Math.max(0, Math.floor(sy - height / 2 / size)); ty <= Math.min(sn - 1, Math.floor(sy + height / 2 / size)); ty++) {
+      for (let tx = Math.floor(sx - width / 2 / size); tx <= Math.floor(sx + width / 2 / size); tx++) {
+        out.push({
+          key: `${z}/${tx}/${ty}`,
+          uri: `${SATELLITE}/${z}/${ty}/${((tx % sn) + sn) % sn}`,
+          left: width / 2 + (tx - sx) * size,
+          top: height / 2 + (ty - sy) * size,
+          size: size + 0.5, // hide hairline seams
+        });
+      }
+    }
+    return out;
+  };
+  const satZ = clamp(Math.floor(zoom + 1.5), 1, SAT_MAX_ZOOM);
+  const sat = enter.key && streets < 1 ? [...(satZ > 3 ? satellite(satZ - 3) : []), ...satellite(satZ)] : [];
+
   return (
     <View style={[styles.root, { width, height }]} {...responder.panHandlers} {...(webWheel as object)}>
-      <Svg width={width} height={height} pointerEvents="none">
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {sat.map((t) => (
+          <Image key={t.key} source={{ uri: t.uri }} style={{ position: 'absolute', left: t.left, top: t.top, width: t.size, height: t.size }} />
+        ))}
+      </View>
+      {streets > 0 && <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.white, opacity: streets }]} pointerEvents="none" />}
+      <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
+        <G opacity={streets}>
         {below.map(drawTile)}
         {tiles.map(drawTile)}
         {labels.map(({ l, x, y, size }, i) => (
@@ -335,6 +387,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
             {l.name}
           </SvgText>
         ))}
+        </G>
         {!!enter.key && (
           <G>
             <Ellipse cx={pin.x} cy={pin.y + 15} rx={8} ry={3} fill="#000" opacity={0.3} />
@@ -343,14 +396,14 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
           </G>
         )}
       </Svg>
-      <T style={styles.attribution} pointerEvents="none">
-        {ATTRIBUTION}
+      <T style={[styles.attribution, streets < 0.5 && { color: colors.hairline }]} pointerEvents="none">
+        {streets < 0.5 ? SAT_ATTRIBUTION : ATTRIBUTION}
       </T>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { backgroundColor: colors.white, overflow: 'hidden' },
+  root: { backgroundColor: colors.black, overflow: 'hidden' },
   attribution: { position: 'absolute', right: 8, bottom: 18, fontSize: 9, color: colors.muted },
 });

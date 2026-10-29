@@ -1,8 +1,9 @@
 /**
  * HS 1: the globe is always the background; the upper interfaces open over it
  * from the side bar, and the Search Interface sits at the bottom. Zooming into
- * the globe cross-fades into the street map (HS 2), and pinching out of the
- * street map fades back to the globe.
+ * the globe cross-fades into a flat satellite map at the same scale, which turns
+ * into the black-and-white street map (HS 2) at street level; pinching out of
+ * it fades back to the globe.
  */
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
@@ -29,7 +30,7 @@ export function HomeScreen() {
   const [street, setStreet] = useState(false);
   const fade = useRef(new Animated.Value(0)).current;
   const keys = useRef(0);
-  const [enter, setEnter] = useState({ point: selected as LatLng, key: 0 });
+  const [enter, setEnter] = useState<{ point: LatLng; key: number; scale?: number; streets?: boolean }>({ point: selected, key: 0 });
   const [globeFocus, setGlobeFocus] = useState<{ point: LatLng; zoom?: number; key: number }>({ point: selected, key: 0 });
   useEffect(() => {
     if (focusKey) setGlobeFocus({ point: selected, key: ++keys.current });
@@ -40,8 +41,8 @@ export function HomeScreen() {
     setStreet(on);
     Animated.timing(fade, { toValue: on ? 1 : 0, duration: on ? 450 : 550, useNativeDriver: Platform.OS !== 'web' }).start();
   };
-  const dive = (center: LatLng) => {
-    setEnter({ point: center, key: ++keys.current });
+  const dive = (center: LatLng, scale: number, byPin: boolean) => {
+    setEnter({ point: center, key: ++keys.current, scale, streets: byPin });
     showStreet(true);
   };
   const surface = (center: LatLng) => {
