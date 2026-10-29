@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     width: 34,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panel,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: colors.line,
