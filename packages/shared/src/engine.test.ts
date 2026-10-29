@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { generateCatalog } from '../scripts/generate-catalog';
 import { createFakeCard, luhnValid, simulateCheckout, CheckoutError } from './checkout';
-import { DEFAULT_LOCATIONS, DEMO_PAYMENT_METHODS, OFFERS, PRODUCTS, STORES } from './seed';
+import { DEFAULT_LOCATIONS, DEMO_PAYMENT_METHODS, OFFERS, PRODUCTS, STORES, loadCatalog } from './seed';
 import { search, suggest } from './engine';
 
 const newHaven = DEFAULT_LOCATIONS[0];
+
+// the apps load the catalogue from Supabase; the tests use the generator that seeds it
+beforeAll(() => loadCatalog(generateCatalog()));
 
 describe('seed', () => {
   it('has unique ids', () => {

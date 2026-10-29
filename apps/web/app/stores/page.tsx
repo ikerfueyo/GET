@@ -1,6 +1,11 @@
 import { OFFERS, STORES } from '@get/shared';
+import { ensureCatalog } from '../../lib/catalog';
 
-export default function Stores() {
+// read from Supabase on each request, never at build time
+export const dynamic = 'force-dynamic';
+
+export default async function Stores() {
+  await ensureCatalog();
   return (
     <>
       <h1>Stores</h1>

@@ -1,8 +1,13 @@
 import Link from 'next/link';
 import { OFFERS, PRODUCTS, STORES } from '@get/shared';
 import { Logo } from './logo';
+import { ensureCatalog } from '../lib/catalog';
 
-export default function Home() {
+// read from Supabase on each request, never at build time
+export const dynamic = 'force-dynamic';
+
+export default async function Home() {
+  await ensureCatalog();
   const cities = new Set(STORES.map((s) => s.city));
   const countries = new Set(STORES.map((s) => s.country));
   return (

@@ -19,7 +19,6 @@ import {
   type PaymentMethod,
   type SavedLocation,
 } from '@get/shared';
-import { postCheckout } from '../api';
 import { useAuth } from './Auth';
 import * as remote from './remote';
 
@@ -86,23 +85,17 @@ interface AppState {
 
 const Ctx = createContext<AppState | null>(null);
 
-const STARBUCKS_CROISSANT = OFFERS.find((o) => o.storeId === 'store_starbucks-chapel-st' && o.productId.includes('croissant'));
-
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const { user, backend } = useAuth();
-  // signed in with Supabase: the account lives in the database, otherwise in memory with demo data
-  const remoteUserId = backend === 'supabase' ? user?.id : undefined;
-  const [ready, setReady] = useState(!remoteUserId);
+  const { user } = useAuth();
+  // the account lives in Supabase; App only mounts this once someone is signed in
+  const userId = user!.id;
+  const [ready, setReady] = useState(false);
   const [locations, setLocations] = useState<SavedLocation[]>(DEFAULT_LOCATIONS);
   const [picked, setPicked] = useState<SavedLocation | null>(null);
   const [selectedId, setSelectedId] = useState('loc_here');
   const [focusKey, setFocusKey] = useState(0);
   const [panel, setPanel] = useState<Panel>(null);
-  const [carts, setCartsState] = useState<Cart[]>(() =>
-    STARBUCKS_CROISSANT && !remoteUserId
-      ? [{ id: 'cart_demo', storeId: STARBUCKS_CROISSANT.storeId, mode: 'in_store', lines: [{ offerId: STARBUCKS_CROISSANT.id, quantity: 1 }], updatedAt: Date.now() }]
-      : [],
-  );
+  const [carts, setCartsState] = useState<Cart[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [reservations] = useState<Reservation[]>(() => [
     {
@@ -133,27 +126,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   // database writes run one at a time, in the order they were made
   const queue = useRef(Promise.resolve());
-  const persist = (write: (userId: string) => Promise<unknown>) => {
-    if (!remoteUserId) return;
-    const userId = remoteUserId;
+  const persist = (write: (userId: string) => Promise<unknown>, failure = 'Could not save that to your account.') => {
     queue.current = queue.current
       .then(() => write(userId))
       .then(
         () => undefined,
         (e) => {
           console.warn('Supabase write failed', e);
-          showToast('Could not save that to your account.');
+          showToast(failure);
         },
       );
   };
 
   useEffect(() => {
-    if (!remoteUserId) return;
     let live = true;
     (async () => {
       try {
         await remote.catalogReady();
-        const a = await remote.loadAccount(remoteUserId, user?.name ?? '');
+        const a = await remote.loadAccount(userId, user?.name ?? '');
         if (!live) return;
         // keep "Here" as GPS already set it
         setLocations((ls) => [ls.find((l) => l.id === 'loc_here') ?? a.locations[0], ...a.locations.slice(1)]);
@@ -174,7 +164,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remoteUserId]);
+  }, [userId]);
 
   // "Here" follows the phone's GPS when the user allows it.
   useEffect(() => {
@@ -261,8 +251,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const eta = Math.max(...lines.map((l) => optionsForOffer(OFFERS.find((o) => o.id === l.offerId)!, selected).find((o) => o.mode === mode)?.etaMinutes ?? 30));
     try {
       const input = { lines, mode, paymentMethod: pm, getCashBalanceUSD: getCashUSD, deliverTo: selected, etaMinutes: eta };
-      // with Supabase the order is saved straight to the user's account
-      const order = (!remoteUserId && (await postCheckout(input))) || { ...simulateCheckout(input), id: remote.newId() };
+      // the order is simulated on the phone and saved to the user's account
+      const order = { ...simulateCheckout(input), id: remote.newId() };
       setOrders((os) => [order, ...os]);
       persist((uid) => remote.insertOrder(uid, order));
       if (pm.kind === 'get_cash') {
@@ -341,7 +331,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     profile,
     updateProfile: (patch) => {
       setProfile((p) => ({ ...p, ...patch }));
-      persist((uid) => remote.updateProfile(uid, patch));
+      // usernames are unique across GET
+      persist((uid) => remote.updateProfile(uid, patch), patch.username ? `Could not save. The username “${patch.username}” may be taken.` : undefined);
     },
     toast,
     showToast,

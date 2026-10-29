@@ -12,13 +12,13 @@ apps/
   web/      Next.js: the operator side (inventory, stores, orders, search playground)
   api/      Node (Express): search, wallet and simulated checkout
 packages/
-  shared/   Types, simulated world inventory, the optimal-offer engine, fake checkout
+  shared/   Types, catalogue loading, the optimal-offer engine, fake checkout (scripts/: the simulated inventory generator)
 supabase/
   migrations/  Postgres schema with row level security
   seed.sql     Generated from packages/shared (npm run db:seed-sql)
 ```
 
-The mobile app, the web app and the API all import `@get/shared`, so the catalogue and the ranking are the same everywhere.
+The mobile app, the web app and the API all import `@get/shared`, so the ranking is the same everywhere, and they all read the catalogue from Supabase.
 
 ## Run it
 
@@ -33,18 +33,20 @@ npm run web         # http://localhost:3000
 npm test            # engine + API tests
 ```
 
-The mobile app works on its own: search and checkout run on the device. To send checkouts through the API (so they show up on the web Orders page), start the API and run the app with `EXPO_PUBLIC_API_URL=http://<your-computer's-LAN-IP>:4000 npm run mobile`.
+The catalogue (stores, products, offers) lives only in Supabase. The mobile app, the web pages and the API all read it from there through `fetchCatalog()` in `@get/shared`; if the app can't reach Supabase it shows "Can't connect to GET" with a Try again button. `packages/shared/scripts/generate-catalog.ts` is the simulated inventory that `npm run db:seed-sql` turns into `supabase/seed.sql`, and the tests run on it so they need no database.
 
 ### Supabase
 
-1. Create a project at supabase.com, then in this folder: `npx supabase init` (keep the existing `supabase/` files), `npx supabase link`, `npx supabase db push`.
-2. Load the catalogue: paste `supabase/seed.sql` into the SQL editor, or run `psql "$DATABASE_URL" -f supabase/seed.sql`.
-3. Optional: to persist API orders, copy `apps/api/.env.example` to `apps/api/.env` and fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and a `DEMO_USER_ID` (a user from Authentication → Users).
-4. Sign-in: run the app with `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API; a `sb_publishable_…` key works too) set, e.g. in `apps/mobile/.env`. EAS Update reads them from the project's EAS environment variables, which are already set for the Expo Go link. Register and Sign in then use Supabase Auth (email + password) and the `profiles` row is created by the trigger in the migration. For a quick demo, turn off Authentication → Providers → Email → "Confirm email".
+GET uses the project at `https://kbznyfvpkucqlzznmonb.supabase.co`. Its URL and publishable key are the app's defaults (`apps/mobile/src/supabase.ts`); set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` to use another project.
 
-With Supabase on, the app loads the catalogue (stores, products, offers) from the database at launch, falling back to the built-in copy if it can't reach it, and keeps each account's GET Cash, wallet cards, saved locations, carts, orders and personal info in its tables (`apps/mobile/src/state/remote.ts`). A new account starts with the demo cards, $150 of GET Cash and Home / Work / CDMX.
+To set up a new project:
 
-Without those two variables, Login/Register still works: accounts are kept on the device (AsyncStorage, salted SHA-256 password), so anyone can try the app in Expo Go. Log out in Account returns to the Login screen.
+1. Create it at supabase.com. In the SQL editor run `supabase/migrations/20261028000000_init.sql`, then `supabase/seed.sql` (or `npx supabase link` + `npx supabase db push` and `psql "$DATABASE_URL" -f supabase/seed.sql`).
+2. For quick demos, turn off Authentication → Sign In / Providers → Email → "Confirm email".
+3. Web: copy `apps/web/.env.example` to `apps/web/.env.local` and fill in the URL and publishable key.
+4. API: copy `apps/api/.env.example` to `apps/api/.env` and fill in `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Optionally add `SUPABASE_SERVICE_ROLE_KEY` and a `DEMO_USER_ID` to persist API orders.
+
+Register and Sign in use Supabase Auth (email + password). Each account's GET Cash, wallet cards, saved locations, carts, orders and personal info are kept in its tables under row level security (`apps/mobile/src/state/remote.ts`). A new account starts with the demo cards, $150 of GET Cash and Home / Work / CDMX. Log out in Account returns to the Login screen.
 
 ## Fake payments
 
@@ -75,7 +77,7 @@ Presets: Cheapest ($0/h, $0/day), Balanced ($20/h, $3/day, the default) and Soon
 ## Next steps
 
 - Street-level map when zoomed in (HS 2), via react-native-maps or Mapbox.
-- The web operator pages and the API still use the built-in catalogue; point them at Supabase too. Favorites and booking reservations have no UI yet.
+- Favorites and booking reservations have no UI yet. The web Orders page still lists the API's orders, not each user's orders in Supabase.
 - Group carts: invite, split by fraction or items, discounts (Orders Interface specs).
 - Location add/edit forms (building type, details, label) and sharing.
 - Swap the rule-based assistant for an LLM.

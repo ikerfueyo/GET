@@ -13,7 +13,7 @@ import { colors, fonts } from './theme';
 type Mode = 'sign_in' | 'register';
 
 export function LoginScreen() {
-  const { signIn, signUp, backend } = useAuth();
+  const { signIn, signUp } = useAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>('sign_in');
   const [name, setName] = useState('');
@@ -127,7 +127,7 @@ export function LoginScreen() {
           </Pressable>
 
           <T style={styles.foot}>
-            {backend === 'device' ? 'Demo: your account is saved on this phone only. Payments are simulated.' : 'Payments are simulated. No real card is ever charged.'}
+            Payments are simulated. No real card is ever charged.
           </T>
         </ScrollView>
       </KeyboardAvoidingView>

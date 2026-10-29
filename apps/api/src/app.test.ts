@@ -1,7 +1,12 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { loadCatalog } from '@get/shared';
+import { generateCatalog } from '@get/shared/scripts/generate-catalog';
 import { createApp } from './app';
 import { Persistence, createUserState } from './store';
+
+// the server reads the catalogue from Supabase; tests use the generator that seeds it
+beforeAll(() => loadCatalog(generateCatalog()));
 
 const app = () => createApp(createUserState(), new Persistence('', '', ''));
 

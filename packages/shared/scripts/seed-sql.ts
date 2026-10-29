@@ -6,7 +6,9 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OFFERS, PRODUCTS, STORES } from '../src/seed';
+import { generateCatalog } from './generate-catalog';
+
+const { stores: STORES, products: PRODUCTS, offers: OFFERS } = generateCatalog();
 
 const q = (v: string) => `'${v.replace(/'/g, "''")}'`;
 const arr = (xs: string[]) => `array[${xs.map(q).join(', ')}]::text[]`;

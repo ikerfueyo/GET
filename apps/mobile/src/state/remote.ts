@@ -1,8 +1,9 @@
 /**
  * Reads and writes GET's Supabase tables (supabase/migrations). The catalogue
- * is public; everything else belongs to the signed-in user and row level
- * security keeps it theirs. Rows are mapped to the same types the shared
- * engine uses, so the rest of the app does not know where data came from.
+ * is public and loaded through @get/shared; everything else belongs to the
+ * signed-in user and row level security keeps it theirs. Rows are mapped to
+ * the same types the shared engine uses, so the rest of the app does not know
+ * where data came from.
  */
 import * as Crypto from 'expo-crypto';
 import {
@@ -10,26 +11,18 @@ import {
   DEMO_GET_CASH_USD,
   DEMO_PAYMENT_METHODS,
   OFFERS,
-  loadCatalog,
+  fetchCatalog,
   storeById,
-  type Currency,
-  type Mode,
-  type Offer,
   type Order,
   type PaymentMethod,
-  type Product,
   type SavedLocation,
-  type Store,
 } from '@get/shared';
 import { supabase } from '../supabase';
 import type { Cart } from './AppState';
 
 export const newId = () => Crypto.randomUUID();
 
-function db() {
-  if (!supabase) throw new Error('Supabase is not configured');
-  return supabase;
-}
+const db = () => supabase;
 
 /** throws the PostgREST error so callers can report it */
 function check<T>({ data, error }: { data: T; error: { message: string } | null }): T {
@@ -41,85 +34,21 @@ function check<T>({ data, error }: { data: T; error: { message: string } | null 
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-const toStore = (r: Row): Store => ({
-  id: r.id,
-  name: r.name,
-  kind: r.kind,
-  category: r.category,
-  address: r.address,
-  city: r.city,
-  country: r.country,
-  currency: r.currency as Currency,
-  lat: r.lat,
-  lng: r.lng,
-  rating: Number(r.rating),
-  verified: r.verified,
-  hasPickup: r.has_pickup,
-  hasDelivery: r.has_delivery,
-  deliveryRadiusKm: Number(r.delivery_radius_km),
-  shipsInternational: r.ships_international,
-  prepMinutes: r.prep_minutes,
-  hours: r.hours,
-});
-
-const toProduct = (r: Row): Product => ({
-  id: r.id,
-  name: r.name,
-  brand: r.brand,
-  category: r.category,
-  description: r.description,
-  tags: r.tags,
-  glyph: r.glyph,
-  basePriceUSD: Number(r.base_price_usd),
-  requirements: r.requirements,
-  isService: r.is_service,
-});
-
-const toOffer = (r: Row): Offer => ({
-  id: r.id,
-  productId: r.product_id,
-  storeId: r.store_id,
-  price: Number(r.price),
-  stock: r.stock,
-  inventoryVerified: r.inventory_verified,
-  modes: r.modes as Mode[],
-  deliveryFee: Number(r.delivery_fee),
-});
-
-/** PostgREST returns at most 1000 rows per request, so page through */
-async function all(table: string, columns = '*'): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (let from = 0; ; from += 1000) {
-    const page = check(await db().from(table).select(columns).order('id').range(from, from + 999)) as unknown as Row[];
-    rows.push(...page);
-    if (page.length < 1000) return rows;
-  }
-}
-
+let catalog: Promise<void> | null = null;
 /**
- * Replaces the built-in catalogue with the database one. Returns false (and
- * keeps the built-in copy) when Supabase is off, unreachable or empty.
+ * Loads the catalogue from Supabase once; App starts it at launch so it loads
+ * during the loading screen. A failed load can be retried by calling it again.
  */
-export async function syncCatalog(): Promise<boolean> {
-  if (!supabase) return false;
-  try {
-    const [stores, products, offers] = await Promise.all([
-      all('stores'),
-      all('products', 'id, name, brand, category, description, tags, glyph, base_price_usd, requirements, is_service'),
-      all('offers'),
-    ]);
-    if (!stores.length || !products.length || !offers.length) return false;
-    loadCatalog({ stores: stores.map(toStore), products: products.map(toProduct), offers: offers.map(toOffer) });
-    return true;
-  } catch (e) {
-    console.warn('Catalogue: using the built-in copy', e);
-    return false;
-  }
+export function catalogReady(): Promise<void> {
+  catalog ??= fetchCatalog(supabase).then(
+    () => undefined,
+    (e) => {
+      catalog = null;
+      throw e;
+    },
+  );
+  return catalog;
 }
-
-let catalog: Promise<boolean> | null = null;
-/** starts loading the catalogue once; App calls it at launch so it loads during the loading screen */
-export const catalogReady = () => (catalog ??= syncCatalog());
 
 // ───────────── Account ─────────────
 

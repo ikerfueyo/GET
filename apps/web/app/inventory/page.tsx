@@ -1,9 +1,14 @@
 import { OFFERS, STORES, formatMoney, productById, storeById } from '@get/shared';
 import { Badges } from '../badges';
+import { ensureCatalog } from '../../lib/catalog';
+
+// read from Supabase on each request, never at build time
+export const dynamic = 'force-dynamic';
 
 type Props = { searchParams: Promise<{ city?: string; category?: string; q?: string }> };
 
 export default async function Inventory({ searchParams }: Props) {
+  await ensureCatalog();
   const { city = '', category = '', q = '' } = await searchParams;
   const cities = [...new Set(STORES.map((s) => s.city))].sort();
   const categories = [...new Set(OFFERS.map((o) => productById.get(o.productId)!.category))].sort();

@@ -119,7 +119,7 @@ function GetCash() {
 }
 
 function Personal() {
-  const { user, backend } = useAuth();
+  const { user } = useAuth();
   const { profile, updateProfile } = useApp();
   const [name, setName] = useState(profile.fullName || user?.name || '');
   const [username, setUsername] = useState(profile.username);
@@ -142,7 +142,7 @@ function Personal() {
       {field('Username', username, setUsername, () => username.trim() !== profile.username && updateProfile({ username: username.trim() }), { autoCapitalize: 'none' })}
       {field('Phone', phone, setPhone, () => phone.trim() !== profile.phone && updateProfile({ phone: phone.trim() }), { keyboardType: 'phone-pad' })}
       <TextInput style={[styles.input, { color: colors.muted }]} value={user?.email ?? ''} editable={false} />
-      <T style={styles.sub}>{backend === 'supabase' ? 'Saved to your GET account.' : 'Demo account saved on this phone only.'}</T>
+      <T style={styles.sub}>Saved to your GET account.</T>
     </View>
   );
 }

@@ -1,7 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { HomeScreen } from './src/HomeScreen';
+import { ConnectError } from './src/ConnectError';
 import { LoadingScreen } from './src/LoadingScreen';
 import { LoginScreen } from './src/LoginScreen';
 import { AppStateProvider } from './src/state/AppState';
@@ -24,18 +25,33 @@ export default function App() {
 function Root() {
   const { ready, user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const showLogin = !loading && ready && !user;
+  const [catalog, setCatalog] = useState<'loading' | 'ok' | 'error'>('loading');
+  const loadCatalog = () => {
+    setCatalog('loading');
+    catalogReady().then(
+      () => setCatalog('ok'),
+      (e) => {
+        console.warn('Could not load the catalogue', e);
+        setCatalog('error');
+      },
+    );
+  };
+  useEffect(loadCatalog, []);
+
+  const failed = !loading && catalog === 'error';
+  const showLogin = !loading && ready && catalog === 'ok' && !user;
   return (
     <>
-      <StatusBar style={loading || showLogin ? 'dark' : 'light'} />
+      <StatusBar style={loading || showLogin || failed ? 'dark' : 'light'} />
       {/* keyed by user so carts, orders and wallet start fresh for each account */}
-      {user && (
+      {user && catalog === 'ok' && (
         <AppStateProvider key={user.id}>
           <HomeScreen />
         </AppStateProvider>
       )}
       {showLogin && <LoginScreen />}
-      {(loading || !ready) && <LoadingScreen onDone={() => setLoading(false)} />}
+      {failed && <ConnectError onRetry={loadCatalog} />}
+      {(loading || !ready || catalog === 'loading') && <LoadingScreen onDone={() => setLoading(false)} />}
     </>
   );
 }
