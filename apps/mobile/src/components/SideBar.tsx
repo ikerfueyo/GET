@@ -117,5 +117,5 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   btn: { height: 34, alignItems: 'center', justifyContent: 'center' },
-  divider: { borderTopWidth: 1, borderTopColor: colors.hairline },
+  divider: { borderTopWidth: 1, borderTopColor: colors.line }, // same black as the bar's outline
 });
