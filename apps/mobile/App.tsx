@@ -22,9 +22,18 @@ export default function App() {
   );
 }
 
+/**
+ * Launch: the logo waits on white until the session and catalogue are known.
+ * Signed in, the page darkens into the Home Screen. Otherwise the logo slides
+ * up into the sign-in page, which darkens into the Home Screen once signed in.
+ */
+type Stage = 'splash' | 'darken' | 'login' | 'home';
+
 function Root() {
   const { ready, user } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const [stage, setStage] = useState<Stage>('splash');
+  const [held, setHeld] = useState(false);
+  const [loginIntro, setLoginIntro] = useState(true);
   const [catalog, setCatalog] = useState<'loading' | 'ok' | 'error'>('loading');
   const loadCatalog = () => {
     setCatalog('loading');
@@ -37,21 +46,34 @@ function Root() {
     );
   };
   useEffect(loadCatalog, []);
+  // keep the logo on screen for a moment even when everything is already loaded
+  useEffect(() => {
+    const t = setTimeout(() => setHeld(true), 700);
+    return () => clearTimeout(t);
+  }, []);
 
-  const failed = !loading && catalog === 'error';
-  const showLogin = !loading && ready && catalog === 'ok' && !user;
+  useEffect(() => {
+    if (stage === 'splash' && held && ready && catalog === 'ok') setStage(user ? 'darken' : 'login');
+    // signing out returns to the sign-in page, without the logo slide
+    if (stage === 'home' && !user) {
+      setLoginIntro(false);
+      setStage('login');
+    }
+  }, [stage, held, ready, catalog, user]);
+
+  const failed = catalog === 'error' && stage !== 'home';
   return (
     <>
-      <StatusBar style={loading || showLogin || failed ? 'dark' : 'light'} />
-      {/* keyed by user so carts, orders and wallet start fresh for each account */}
+      <StatusBar style={stage === 'home' ? 'light' : 'dark'} />
+      {/* keyed by user so carts, orders and wallet start fresh for each account; mounted under the darkening page so it is ready when revealed */}
       {user && catalog === 'ok' && (
         <AppStateProvider key={user.id}>
-          <HomeScreen />
+          <HomeScreen revealed={stage === 'home'} />
         </AppStateProvider>
       )}
-      {showLogin && <LoginScreen />}
+      {stage === 'login' && <LoginScreen intro={loginIntro} leaving={!!user} onLeft={() => setStage('home')} />}
       {failed && <ConnectError onRetry={loadCatalog} />}
-      {(loading || !ready || catalog === 'loading') && <LoadingScreen onDone={() => setLoading(false)} />}
+      {(stage === 'splash' || stage === 'darken') && !failed && <LoadingScreen dark={stage === 'darken'} onDone={() => setStage('home')} />}
     </>
   );
 }

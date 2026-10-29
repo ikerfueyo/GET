@@ -4,10 +4,12 @@
  * the globe cross-fades into a flat satellite map at the same scale, which turns
  * into the black-and-white street map (HS 2) at street level; pinching out of
  * it fades back to the globe.
+ * Once `revealed`, the screen fades in while the side bar slides in from the
+ * left and the Search Interface rises from the bottom.
  */
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LatLng } from '@get/shared';
 import { Globe } from './components/Globe';
@@ -21,11 +23,16 @@ import { SearchInterface, type SearchHandle } from './interfaces/SearchInterface
 import { useApp } from './state/AppState';
 import { colors } from './theme';
 
-export function HomeScreen() {
+export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { selected, focusKey, panel, setPanel, toast } = useApp();
   const searchRef = useRef<SearchHandle>(null);
+
+  const intro = useRef(new Animated.Value(revealed ? 1 : 0)).current;
+  useEffect(() => {
+    if (revealed) Animated.timing(intro, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [revealed, intro]);
 
   const [street, setStreet] = useState(false);
   const fade = useRef(new Animated.Value(0)).current;
@@ -57,47 +64,55 @@ export function HomeScreen() {
   const mapHeight = height - searchCollapsed + 14;
 
   return (
-    <View style={styles.root}>
-      <View style={StyleSheet.absoluteFill} pointerEvents={street ? 'none' : 'auto'}>
-        <Globe
-          width={width}
-          height={mapHeight}
-          selected={selected}
-          focus={globeFocus}
-          onDive={dive}
-        />
-      </View>
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade }]} pointerEvents={street ? 'auto' : 'none'}>
-        <StreetMap
-          width={width}
-          height={mapHeight}
-          active={street}
-          selected={selected}
-          enter={enter}
-          focus={{ point: selected, key: focusKey }}
-          onExit={surface}
-        />
-      </Animated.View>
-      {street && <StatusBar style="dark" />}
-
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-        {panel === 'location' && <LocationInterface top={top} />}
-        {panel === 'orders' && (
-          <OrdersInterface
-            top={panelTop}
-            bottom={searchCollapsed - 14}
-            onAddItem={() => {
-              setPanel(null);
-              searchRef.current?.expand();
-            }}
+    <View style={styles.root} pointerEvents={revealed ? 'auto' : 'none'}>
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: intro }]} pointerEvents="box-none">
+        <View style={StyleSheet.absoluteFill} pointerEvents={street ? 'none' : 'auto'}>
+          <Globe
+            width={width}
+            height={mapHeight}
+            selected={selected}
+            focus={globeFocus}
+            onDive={dive}
           />
-        )}
-        {panel === 'account' && <AccountInterface top={panelTop} bottom={searchCollapsed - 14} />}
-      </View>
+        </View>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade }]} pointerEvents={street ? 'auto' : 'none'}>
+          <StreetMap
+            width={width}
+            height={mapHeight}
+            active={street}
+            selected={selected}
+            enter={enter}
+            focus={{ point: selected, key: focusKey }}
+            onExit={surface}
+          />
+        </Animated.View>
+        {street && <StatusBar style="dark" />}
 
-      <SideBar top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} />
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          {panel === 'location' && <LocationInterface top={top} />}
+          {panel === 'orders' && (
+            <OrdersInterface
+              top={panelTop}
+              bottom={searchCollapsed - 14}
+              onAddItem={() => {
+                setPanel(null);
+                searchRef.current?.expand();
+              }}
+            />
+          )}
+          {panel === 'account' && <AccountInterface top={panelTop} bottom={searchCollapsed - 14} />}
+        </View>
+      </Animated.View>
 
-      <SearchInterface ref={searchRef} collapsed={searchCollapsed} full={height - insets.top} bottomInset={insets.bottom} />
+      <SideBar top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} slideX={intro.interpolate({ inputRange: [0, 1], outputRange: [-60, 0] })} />
+
+      <SearchInterface
+        ref={searchRef}
+        collapsed={searchCollapsed}
+        full={height - insets.top}
+        bottomInset={insets.bottom}
+        slideY={intro.interpolate({ inputRange: [0, 1], outputRange: [searchCollapsed + 20, 0] })}
+      />
 
       {toast && (
         <View style={[styles.toast, { bottom: searchCollapsed + 12 }]} pointerEvents="none">

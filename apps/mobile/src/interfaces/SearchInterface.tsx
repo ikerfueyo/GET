@@ -39,8 +39,12 @@ const SORTS: { key: SortKey | Preset; label: string }[] = [
   { key: 'rating', label: 'Rating' },
 ];
 
-export const SearchInterface = forwardRef<SearchHandle, { collapsed: number; full: number; bottomInset: number }>(function SearchInterface(
-  { collapsed, full, bottomInset },
+export const SearchInterface = forwardRef<
+  SearchHandle,
+  // slideY offsets the sheet vertically, for the Home Screen's entrance
+  { collapsed: number; full: number; bottomInset: number; slideY?: Animated.AnimatedInterpolation<number> }
+>(function SearchInterface(
+  { collapsed, full, bottomInset, slideY },
   ref,
 ) {
   const { selected } = useApp();
@@ -88,7 +92,7 @@ export const SearchInterface = forwardRef<SearchHandle, { collapsed: number; ful
   const toggleMode = (m: Mode) => setModes((ms) => (ms.includes(m) ? ms.filter((x) => x !== m) : [...ms, m]));
 
   return (
-    <Animated.View style={[styles.sheet, { height, paddingBottom: bottomInset }]}>
+    <Animated.View style={[styles.sheet, { height, paddingBottom: bottomInset }, slideY && { transform: [{ translateY: slideY }] }]}>
       <View {...responder.panHandlers} style={styles.handleZone}>
         <View style={styles.handle} />
       </View>
