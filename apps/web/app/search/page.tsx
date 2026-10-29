@@ -1,9 +1,14 @@
 import { DEFAULT_LOCATIONS, MODES, PRESETS, formatEta, formatMoney, search, type Preset, type SortKey } from '@get/shared';
 import { Badges } from '../badges';
+import { ensureCatalog } from '../../lib/catalog';
+
+// read from Supabase on each request, never at build time
+export const dynamic = 'force-dynamic';
 
 type Props = { searchParams: Promise<{ q?: string; loc?: string; sort?: string }> };
 
 export default async function Search({ searchParams }: Props) {
+  await ensureCatalog();
   const { q = '', loc = 'loc_here', sort = 'balanced' } = await searchParams;
   const location = DEFAULT_LOCATIONS.find((l) => l.id === loc) ?? DEFAULT_LOCATIONS[0];
   const results = q ? search({ query: q, location, ...(sort in PRESETS ? { preset: sort as Preset } : { sort: sort as SortKey }) }) : [];
