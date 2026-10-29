@@ -5,11 +5,13 @@
  * Eats map), plus water so coastlines still read.
  */
 import { VectorTile } from '@mapbox/vector-tile';
+import { gunzipSync } from 'fflate';
+import { Compression, PMTiles } from 'pmtiles';
 import { PbfReader } from 'pbf';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 export const TILE_MAX_ZOOM = 14; // deeper zooms overzoom the z14 tiles
-export const ATTRIBUTION = '© OpenMapTiles © OpenStreetMap';
+export const ATTRIBUTION = '© OpenMapTiles © OpenStreetMap © Overture Maps';
 
 /** road classes drawn, widest first; widths are px at zoom 16 */
 export const ROADS = [
@@ -71,6 +73,49 @@ export const tileKey = (z: number, x: number, y: number) => `${z}/${x}/${y}`;
 export function peekTile(z: number, x: number, y: number): TileData | undefined {
   const hit = cache.get(tileKey(z, x, y));
   return hit && hit !== 'loading' && hit !== 'error' ? hit : undefined;
+}
+
+// ── buildings ──
+// OpenStreetMap misses most buildings outside big cities (Tampico has almost
+// none), so footprints come from Overture Maps, which merges OSM with Microsoft
+// and Google's machine-traced buildings and covers nearly everywhere. It is one
+// PMTiles archive read with HTTP range requests; bump the release when Overture
+// retires it (https://docs.overturemaps.org/examples/overture-tiles).
+const OVERTURE_BUILDINGS = 'https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/2026-10-21.0/buildings.pmtiles';
+export const BUILDINGS_ZOOM = 14;
+
+// Hermes has no DecompressionStream, so gunzip in JS
+const decompress = async (buf: ArrayBuffer, c: Compression) =>
+  c === Compression.Gzip ? (gunzipSync(new Uint8Array(buf)).buffer as ArrayBuffer) : buf;
+let overture: PMTiles | null = null;
+const buildingCache = new Map<string, string | 'loading' | 'error'>();
+
+/** building footprints of a z14 tile as one SVG path in tile units, loading it if needed */
+export function getBuildings(z: number, x: number, y: number): string | undefined {
+  const key = tileKey(z, x, y);
+  const hit = buildingCache.get(key);
+  if (hit !== undefined) return hit === 'loading' || hit === 'error' ? undefined : hit;
+  buildingCache.set(key, 'loading');
+  overture ??= new PMTiles(OVERTURE_BUILDINGS, undefined, decompress);
+  overture
+    .getZxy(z, x, y)
+    .then((r) => {
+      const d: string[] = [];
+      if (r) {
+        const layer = new VectorTile(new PbfReader(new Uint8Array(r.data))).layers.building;
+        for (let i = 0; layer && i < layer.length; i++) {
+          const f = layer.feature(i);
+          if (f.type === 3 && f.properties.is_underground !== true) d.push(ringsD(f.loadGeometry()));
+        }
+      }
+      buildingCache.set(key, d.join(''));
+      notify();
+    })
+    .catch(() => {
+      buildingCache.set(key, 'error');
+      setTimeout(() => buildingCache.get(key) === 'error' && buildingCache.delete(key), 5000);
+    });
+  return undefined;
 }
 
 /** returns the tile if it is ready, and starts loading it if it is not */

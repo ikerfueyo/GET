@@ -17,7 +17,7 @@ import Svg, { Circle, Ellipse, G, Path, Text as SvgText } from 'react-native-svg
 import type { LatLng } from '@get/shared';
 import { colors, fonts } from '../theme';
 import { T } from './ui';
-import { ATTRIBUTION, ROADS, TILE_MAX_ZOOM, fromWorld, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
+import { ATTRIBUTION, BUILDINGS_ZOOM, ROADS, TILE_MAX_ZOOM, fromWorld, getBuildings, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
 
 const TILE = 512; // screen px of a tile at its own zoom, as in MapLibre
 const MIN_ZOOM = 2;
@@ -261,7 +261,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   const y0 = Math.max(0, Math.floor(cyT - height / 2 / ts));
   const y1 = Math.min(n - 1, Math.floor(cyT + height / 2 / ts));
 
-  type Placed = { key: string; tile: TileData; ox: number; oy: number; s: number };
+  type Placed = { key: string; tile: TileData; ox: number; oy: number; s: number; buildings?: string };
   const below: Placed[] = []; // coarser tiles standing in while the right ones load
   const tiles: Placed[] = [];
   const seen = new Set<string>();
@@ -274,7 +274,9 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
         const oy = height / 2 + (ty - cyT) * ts;
         const t = getTile(tz, ((tx % n) + n) % n, ty);
         if (t) {
-          tiles.push({ key: `${tz}/${tx}/${ty}`, tile: t, ox, oy, s: ts / t.extent });
+          // Overture's footprints where loaded, OpenStreetMap's own until then
+          const b = buildings > 0 && tz === BUILDINGS_ZOOM ? getBuildings(tz, ((tx % n) + n) % n, ty) : undefined;
+          tiles.push({ key: `${tz}/${tx}/${ty}`, tile: t, ox, oy, s: ts / t.extent, buildings: b ?? t.buildings });
           continue;
         }
         for (let k = 1; k <= 4 && tz - k >= 0; k++) {
@@ -295,12 +297,12 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
     }
   }
 
-  const drawTile = ({ key, tile, ox, oy, s }: Placed) => (
+  const drawTile = ({ key, tile, ox, oy, s, buildings: b = tile.buildings }: Placed) => (
     <G key={key} transform={`translate(${ox} ${oy}) scale(${s})`}>
       {!!tile.water && <Path d={tile.water} fill={colors.field} />}
-      {!!tile.buildings && buildings > 0 && (
+      {!!b && buildings > 0 && (
         // fill only: an outline would also trace where buildings are cut at tile edges
-        <Path d={tile.buildings} fill="#E4E4E4" opacity={buildings} />
+        <Path d={b} fill="#E4E4E4" opacity={buildings} />
       )}
       {ROADS.slice()
         .reverse()
