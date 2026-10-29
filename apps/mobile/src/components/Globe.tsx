@@ -1,7 +1,8 @@
 /**
  * HS 1: planet Earth in black space, orbited by the Moon and Mars.
- * Drag to rotate, pinch (or mouse wheel on web) to zoom, tap anywhere to pick
- * a location, tap the selected pin to zoom into it. Zooming in past the
+ * Drag to rotate, pinch (or mouse wheel on web) to zoom, tap the selected pin
+ * to zoom into it. Taps elsewhere do nothing: the selected location only
+ * changes from the Location Interface. Zooming in past the
  * globe's closest view (or tapping the pin) dives into the street map, HS 2.
  *
  * Drawn with d3-geo's orthographic projection into react-native-svg so it
@@ -31,7 +32,6 @@ type Props = {
   selected: LatLng;
   /** when this object changes the globe flies to it */
   focus?: { point: LatLng; zoom?: number; key: number };
-  onPick?: (point: LatLng) => void;
   /**
    * zoomed in past MAX_ZOOM: time for the flat map. `scale` is the globe's
    * radius in px, so the map can open at the same scale; `byPin` is set when
@@ -43,7 +43,7 @@ type Props = {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
-export function Globe({ width, height, selected, focus, onPick, onDive }: Props) {
+export function Globe({ width, height, selected, focus, onDive }: Props) {
   // rotation is [-lng, -lat] of the point facing the viewer
   const view = useRef({ lambda: -selected.lng, phi: -clamp(selected.lat, -60, 60), zoom: 1 });
   const [, setFrame] = useState(0);
@@ -124,8 +124,8 @@ export function Globe({ width, height, selected, focus, onPick, onDive }: Props)
     return Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
   };
 
-  const latest = useRef({ projection, pin, onPick, onDive, cx, cy, r });
-  latest.current = { projection, pin, onPick, onDive, cx, cy, r };
+  const latest = useRef({ projection, pin, onDive });
+  latest.current = { projection, pin, onDive };
 
   const responder = useMemo(
     () =>
@@ -183,16 +183,12 @@ export function Globe({ width, height, selected, focus, onPick, onDive }: Props)
   );
 
   function handleTap(x: number, y: number) {
-    const { projection: proj, pin: p, onPick: pick, cx: X, cy: Y, r: R } = latest.current;
+    const { projection: proj, pin: p } = latest.current;
     if (p && Math.hypot(p[0] - x, p[1] - y) < 26) {
       // "Location is zoomed into upon touch"
       const ll = proj.invert?.([p[0], p[1]]);
       if (ll) flyTo({ lng: ll[0], lat: ll[1] }, MAX_ZOOM, () => dive(true));
-      return;
     }
-    if (Math.hypot(x - X, y - Y) > R) return; // tapped space
-    const ll = proj.invert?.([x, y]);
-    if (ll && pick) pick({ lng: ll[0], lat: ll[1] });
   }
 
   const wheelIn = useRef(0);

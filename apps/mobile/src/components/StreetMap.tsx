@@ -8,7 +8,7 @@
  * Imagery is Esri World Imagery; streets are OpenStreetMap vector tiles (see
  * ./tiles) drawn with react-native-svg. Neither needs a map SDK or API key, so it
  * looks the same in Expo Go and on the web. Drag to pan, pinch (or mouse wheel)
- * to zoom, tap to pick a location; pinching back out past where you came in
+ * to zoom; pinching back out past where you came in
  * hands back to the globe.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -46,7 +46,6 @@ type Props = {
   enter: { point: LatLng; key: number; scale?: number; streets?: boolean };
   /** when the key changes the map flies to the point if it is out of view */
   focus: { point: LatLng; key: number };
-  onPick?: (point: LatLng) => void;
   onExit?: (center: LatLng) => void;
 };
 
@@ -56,7 +55,7 @@ const wrap = (x: number) => x - Math.floor(x);
 const worldPx = (zoom: number) => TILE * 2 ** zoom;
 const roadWidth = (base: number, zoom: number) => Math.max(0.8, base * 2 ** ((zoom - 16) * 0.8));
 
-export function StreetMap({ width, height, active, selected, enter, focus, onPick, onExit }: Props) {
+export function StreetMap({ width, height, active, selected, enter, focus, onExit }: Props) {
   const start = toWorld(enter.point.lng, enter.point.lat);
   const view = useRef<View2>({ ...start, zoom: MIN_ZOOM });
   /** letting go below this zoom goes back to the globe */
@@ -130,8 +129,8 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
   const g = useRef({ mode: 'none' as Mode, base: view.current, dx0: 0, dy0: 0, d0: 0, wp: { x: 0, y: 0 }, t: 0, moved: false });
   const touchesOf = (e: GestureResponderEvent) => e.nativeEvent.touches ?? [];
 
-  const latest = useRef({ width, height, onPick, onExit });
-  latest.current = { width, height, onPick, onExit };
+  const latest = useRef({ width, height, onExit });
+  latest.current = { width, height, onExit };
 
   const screenToWorld = (sx: number, sy: number, v: View2 = view.current) => {
     const W = worldPx(v.zoom);
@@ -186,11 +185,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onPic
           redraw();
         },
         onPanResponderRelease: (e, gs) => {
-          if (!g.current.moved && Date.now() - g.current.t < 400) {
-            const p = screenToWorld(e.nativeEvent.locationX, e.nativeEvent.locationY);
-            latest.current.onPick?.(fromWorld(wrap(p.x), p.y));
-            return;
-          }
+          if (!g.current.moved) return; // a tap; the selected location only changes from the Location Interface
           if (view.current.zoom < exitBelow.current) return exit();
           if (g.current.mode !== 'pan') return;
           // a little inertia after a flick
