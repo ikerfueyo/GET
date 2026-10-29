@@ -1,7 +1,8 @@
 /**
  * Bakes the globe's map for the GPU, in two steps:
- *   npx tsx scripts/bake-earth.ts           draws 8192×4096 masks of land, desert,
- *                                           ice and borders into scripts/.masks/
+ *   npx tsx scripts/bake-earth.ts           draws 8192×4096 masks of land, desert
+ *                                           and ice, and writes the border lines,
+ *                                           into scripts/.masks/
  *   python3 scripts/bake-sdf.py             turns them into distance fields:
  *                                           assets/earth-sdf.png and earth-borders.png
  * (bake-sdf.py needs numpy, scipy and pillow.) Each texel stores how far it is
@@ -23,15 +24,21 @@ const layers = {
   land: feature(c, c.objects.land),
   desert: feature(s, s.objects.desert),
   ice: feature(s, s.objects.ice),
-  borders: mesh(c, c.objects.countries, (a: unknown, b: unknown) => a !== b),
 };
+const BORDERS = mesh(c, c.objects.countries, (a: unknown, b: unknown) => a !== b);
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 (async () => {
   mkdirSync('scripts/.masks', { recursive: true });
   const browser = await chromium.launch();
   const page = await browser.newPage();
-  const path = geoPath(geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, W / 4]).precision(0.05));
+  const projection = geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, W / 4]).precision(0.05);
+  const path = geoPath(projection);
+  // the borders as lines in 4096-wide texels, for exact distances to their centre
+  const lines = BORDERS.coordinates.map((line) =>
+    line.map(([lng, lat]) => projection([lng, lat])!.map((v) => +(v / 2).toFixed(3))),
+  );
+  writeFileSync('scripts/.masks/borders.json', JSON.stringify(lines));
   for (const [name, layer] of Object.entries(layers)) {
     const d = path(layer as never) ?? '';
     const png: string = await page.evaluate(
@@ -43,14 +50,9 @@ const { chromium } = createRequire(import.meta.url)('playwright');
         g.fillStyle = '#000';
         g.fillRect(0, 0, W, W / 2);
         g.fillStyle = g.strokeStyle = '#fff';
-        if (name === 'borders') {
-          g.lineWidth = 1;
-          g.stroke(new Path2D(d));
-        } else {
-          g.fill(new Path2D(d));
-          // Antarctica's edge along the South Pole doesn't quite reach the bottom row
-          if (name === 'land' || name === 'ice') g.fillRect(0, (W / 2) * (174 / 180), W, W / 2);
-        }
+        g.fill(new Path2D(d));
+        // Antarctica's edge along the South Pole doesn't quite reach the bottom row
+        if (name === 'land' || name === 'ice') g.fillRect(0, (W / 2) * (174 / 180), W, W / 2);
         return canvas.toDataURL('image/png').split(',')[1];
       },
       { W, d, name },
