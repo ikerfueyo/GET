@@ -2,7 +2,8 @@
  * LRI 1. The sketch page is blank, so this keeps to the rest of GET: white
  * page, the block logo, black-outlined fields and one black button.
  * On launch (`intro`) the splash logo slides up into place before the fields
- * fade in; once signed in (`leaving`) the page darkens like the loading screen.
+ * fade in; once signed in (`leaving`) the fields fade out, the logo slides back
+ * down to the splash position and the page darkens like the loading screen.
  */
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Animated, Easing, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
@@ -15,7 +16,7 @@ import { colors, fonts } from './theme';
 
 type Mode = 'sign_in' | 'register';
 
-const LOGO = 84;
+const LOGO = 68;
 const native = Platform.OS !== 'web';
 
 export function LoginScreen({ intro, leaving, onLeft }: { intro: boolean; leaving: boolean; onLeft: () => void }) {
@@ -34,6 +35,7 @@ export function LoginScreen({ intro, leaving, onLeft }: { intro: boolean; leavin
   const dark = useRef(new Animated.Value(0)).current;
   const emailRef = useRef<ComponentRef<typeof TextInput>>(null);
   const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
 
   useEffect(() => {
     Animated.sequence([
@@ -46,8 +48,11 @@ export function LoginScreen({ intro, leaving, onLeft }: { intro: boolean; leavin
   useEffect(() => {
     if (!leaving) return;
     Keyboard.dismiss();
-    Animated.parallel([
+    // the slide lands on the splash position only from the top of the page
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    Animated.sequence([
       Animated.timing(fade, { toValue: 0, duration: 300, useNativeDriver: native }),
+      Animated.timing(slide, { toValue: 0, duration: 650, easing: Easing.inOut(Easing.cubic), useNativeDriver: native }),
       darken(dark),
     ]).start(() => onLeft());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,6 +96,7 @@ export function LoginScreen({ intro, leaving, onLeft }: { intro: boolean; leavin
     <Animated.View style={[styles.root, { backgroundColor }]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={[styles.content, { paddingTop: logoTop, paddingBottom: insets.bottom + 24 }]}
           keyboardShouldPersistTaps="handled"
         >
