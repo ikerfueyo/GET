@@ -4,13 +4,17 @@ import type { SavedLocation } from '@get/shared';
 
 type IconProps = { size?: number; color?: string };
 
-/** the pin with a see-through hole, so whatever is behind it shows in the middle */
-const PIN_D = 'M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zM12 6.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z';
+/** the pin with a see-through hole of radius `hole`, so whatever is behind it shows in the middle */
+const pinD = (hole: number) =>
+  `M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zM12 ${9 - hole}a${hole} ${hole} 0 1 0 0 ${2 * hole}a${hole} ${hole} 0 1 0 0-${2 * hole}z`;
+const PIN_D = pinD(2.6);
+// the side bar draws the pin at 18px; this hole is the same size on screen as Other's at 15px in the Location strip
+const SIDEBAR_PIN_D = pinD(2.15);
 
 export function PinIcon({ size = 18, color = '#000' }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d={PIN_D} fill={color} fillRule="evenodd" />
+      <Path d={SIDEBAR_PIN_D} fill={color} fillRule="evenodd" />
     </Svg>
   );
 }
