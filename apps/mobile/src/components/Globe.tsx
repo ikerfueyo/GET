@@ -35,9 +35,6 @@ const LAND = feature(topo, topo.objects.land) as unknown as GeoPermissibleObject
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const surf = surfaces as any;
 const ICE = feature(surf, surf.objects.ice) as unknown as GeoPermissibleObjects;
-// lighter versions drawn while the globe is moving, so dragging and zooming stay smooth
-const LAND_LOW = feature(surf, surf.objects.landLow) as unknown as GeoPermissibleObjects;
-const ICE_LOW = feature(surf, surf.objects.iceLow) as unknown as GeoPermissibleObjects;
 const DESERT = feature(surf, surf.objects.desert) as unknown as GeoPermissibleObjects;
 const BORDERS = mesh(topo, topo.objects.countries, (a: unknown, b: unknown) => a !== b) as GeoPermissibleObjects;
 
@@ -90,28 +87,17 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
   // rotation is [-lng, -lat] of the point facing the viewer
   const view = useRef({ lambda: -selected.lng, phi: -clamp(selected.lat, -60, 60), zoom: 1 });
   const [, setFrame] = useState(0);
-  const nextFrame = () => setFrame((f) => (f + 1) % 1_000_000);
-  // While the view changes, draw at most once per screen frame and in less
-  // detail; once it has been still for a moment, draw it in full again.
-  const moving = useRef(false);
-  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // touches can arrive faster than the screen refreshes: draw at most once per frame
   const frameReq = useRef<number | null>(null);
   const redraw = () => {
-    moving.current = true;
-    if (settle.current) clearTimeout(settle.current);
-    settle.current = setTimeout(() => {
-      moving.current = false;
-      nextFrame();
-    }, 160);
     if (frameReq.current !== null) return;
     frameReq.current = requestAnimationFrame(() => {
       frameReq.current = null;
-      nextFrame();
+      setFrame((f) => (f + 1) % 1_000_000);
     });
   };
   useEffect(
     () => () => {
-      if (settle.current) clearTimeout(settle.current);
       if (frameReq.current !== null) cancelAnimationFrame(frameReq.current);
     },
     [],
@@ -176,30 +162,26 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
     () => geoOrthographic().scale(r).translate([cx, cy]).rotate([lambda, phi]).clipAngle(90).precision(0.6),
     [r, cx, cy, lambda, phi],
   );
-  const lowDetail = moving.current;
-  const path = geoPath(projection).digits(1);
-  const landD = path(lowDetail ? LAND_LOW : LAND) ?? '';
-  const iceD = path(lowDetail ? ICE_LOW : ICE) ?? '';
+  const path = geoPath(projection);
+  const landD = path(LAND) ?? '';
+  const iceD = path(ICE) ?? '';
   const desertD = path(DESERT) ?? '';
-  const bordersD = lowDetail ? '' : (path(BORDERS) ?? '');
+  const bordersD = path(BORDERS) ?? '';
 
   const center: [number, number] = [-lambda, -phi];
 
-  // night: the hemisphere facing away from the real Sun, darkening in six
-  // light bands from the terminator inwards, so the edge reads as twilight
-  // (two darker bands while moving)
+  // night: the hemisphere facing away from the real Sun, darkening in two
+  // bands from the terminator inwards, so the edge reads as twilight
   const sky = useMemo(() => skyAt(now), [now]);
   const sunLen = Math.hypot(...sky.sun);
   const antiSun: [number, number] = [
     (Math.atan2(-sky.sun[1], -sky.sun[0]) * 180) / Math.PI,
     (Math.asin(-sky.sun[2] / sunLen) * 180) / Math.PI,
   ];
-  const nightBands = lowDetail ? [90, 81] : [90, 87, 84, 81, 78, 75];
-  const nightOpacity = lowDetail ? 0.2 : 0.075;
   const nightDs = useMemo(
-    () => nightBands.map((radius) => path(geoCircle().center(antiSun).radius(radius)()) ?? ''),
+    () => [90, 81].map((radius) => path(geoCircle().center(antiSun).radius(radius)()) ?? ''),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projection, lowDetail, antiSun[0], antiSun[1]],
+    [projection, antiSun[0], antiSun[1]],
   );
   const pinVisible = geoDistance([selected.lng, selected.lat], center) < Math.PI / 2 - 0.02;
   const pin = pinVisible ? projection([selected.lng, selected.lat]) : null;
@@ -421,9 +403,9 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
         <Path d={landD} fill={colors.land} />
         <Path d={desertD} fill={colors.desert} />
         <Path d={iceD} fill={colors.ice} />
-        {bordersD !== '' && <Path d={bordersD} fill="none" stroke={colors.landStroke} strokeWidth={0.6} />}
+        <Path d={bordersD} fill="none" stroke={colors.landStroke} strokeWidth={0.6} />
         {nightDs.map((d, i) => (
-          <Path key={i} d={d} fill={colors.night} opacity={nightOpacity} />
+          <Path key={i} d={d} fill={colors.night} opacity={0.2} />
         ))}
         <Circle cx={cx} cy={cy} r={r} fill="url(#shade)" />
 
