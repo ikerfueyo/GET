@@ -17,10 +17,18 @@ import countries110 from 'world-atlas/countries-110m.json';
 import type { LatLng } from '@get/shared';
 import { colors } from '../theme';
 import { bodyLongitudes } from './sky';
+import ice from './ice.json';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const topo = countries110 as any;
 const LAND = feature(topo, topo.objects.land) as unknown as GeoPermissibleObjects;
+// Snow and ice, painted white over the land (ice.json): Natural Earth 1:50m
+// glaciated areas, simplified and clipped to the 110m coastline, plus every
+// 110m landmass that is mostly ice or lies south of 60°S, painted whole. So
+// Antarctica, Greenland, Svalbard and Franz Josef Land are white, and the
+// ice fields of the Canadian Arctic, Alaska, Patagonia and the Himalaya show.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ICE = feature(ice as any, (ice as any).objects.ice) as unknown as GeoPermissibleObjects;
 const BORDERS = mesh(topo, topo.objects.countries, (a: unknown, b: unknown) => a !== b) as GeoPermissibleObjects;
 
 const MIN_ZOOM = 0.8;
@@ -110,6 +118,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
   );
   const path = geoPath(projection);
   const landD = path(LAND) ?? '';
+  const iceD = path(ICE) ?? '';
   const bordersD = path(BORDERS) ?? '';
 
   const center: [number, number] = [-lambda, -phi];
@@ -253,6 +262,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
 
         <Circle cx={cx} cy={cy} r={r} fill={colors.ocean} />
         <Path d={landD} fill={colors.land} />
+        <Path d={iceD} fill={colors.ice} />
         <Path d={bordersD} fill="none" stroke={colors.landStroke} strokeWidth={0.6} />
         <Circle cx={cx} cy={cy} r={r} fill="url(#shade)" />
 

@@ -17,6 +17,7 @@ export const colors = {
   ocean: '#2D5BC4',
   land: '#2E7D4F',
   landStroke: '#256A42',
+  ice: '#FFFFFF', // snow and ice on the globe
   moon: '#F2F2F2',
   mars: '#E5533D',
 };
