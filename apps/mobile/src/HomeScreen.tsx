@@ -54,6 +54,8 @@ export function HomeScreen() {
   const searchCollapsed = 72 + insets.bottom;
   const top = insets.top + 8;
   const panelTop = insets.top + 6;
+  // open Orders/Account float like the Location strip: same side gap, and the same gap above the collapsed Search
+  const panelBottom = searchCollapsed + 10;
   const mapHeight = height - searchCollapsed + 14;
 
   return (
@@ -85,14 +87,14 @@ export function HomeScreen() {
         {panel === 'orders' && (
           <OrdersInterface
             top={panelTop}
-            bottom={searchCollapsed - 14}
+            bottom={panelBottom}
             onAddItem={() => {
               setPanel(null);
               searchRef.current?.expand();
             }}
           />
         )}
-        {panel === 'account' && <AccountInterface top={panelTop} bottom={searchCollapsed - 14} />}
+        {panel === 'account' && <AccountInterface top={panelTop} bottom={panelBottom} />}
       </View>
 
       <SideBar top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} />

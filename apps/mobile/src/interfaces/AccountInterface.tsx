@@ -148,7 +148,7 @@ function Personal() {
 }
 
 const styles = StyleSheet.create({
-  panel: { position: 'absolute', left: 0, right: 0, backgroundColor: colors.white, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.black, zIndex: 15 },
+  panel: { position: 'absolute', left: 10, right: 10, backgroundColor: colors.white, borderWidth: 1, borderRadius: 10, borderColor: colors.black, overflow: 'hidden', zIndex: 15 },
   profile: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingLeft: 56, borderBottomWidth: 1, borderBottomColor: colors.black },
   avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.black, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.white, fontSize: 22, fontWeight: '700' },
