@@ -43,6 +43,10 @@ export interface TileData {
   extent: number;
   roads: Partial<Record<RoadKey, string>>;
   water: string;
+  /** for the drawn map between the globe and the satellite view */
+  rivers: string;
+  countryBorders: string;
+  stateBorders: string;
   buildings: string;
   labels: Label[];
 }
@@ -146,7 +150,7 @@ export function getTile(z: number, x: number, y: number): TileData | undefined {
 
 function parseTile(buf: ArrayBuffer): TileData {
   const vt = new VectorTile(new PbfReader(buf));
-  const out: TileData = { extent: 4096, roads: {}, water: '', buildings: '', labels: [] };
+  const out: TileData = { extent: 4096, roads: {}, water: '', rivers: '', countryBorders: '', stateBorders: '', buildings: '', labels: [] };
   const parts: Partial<Record<RoadKey, string[]>> = {};
 
   const roads = vt.layers.transportation;
@@ -163,12 +167,39 @@ function parseTile(buf: ArrayBuffer): TileData {
 
   const water = vt.layers.water;
   if (water) {
+    out.extent = water.extent;
     const w: string[] = [];
     for (let i = 0; i < water.length; i++) {
       const f = water.feature(i);
       if (f.type === 3) w.push(ringsD(f.loadGeometry()));
     }
     out.water = w.join('');
+  }
+
+  const waterways = vt.layers.waterway;
+  if (waterways) {
+    const r: string[] = [];
+    for (let i = 0; i < waterways.length; i++) {
+      const f = waterways.feature(i);
+      if (f.type === 2 && f.properties.class === 'river') r.push(linesD(f.loadGeometry()));
+    }
+    out.rivers = r.join('');
+  }
+
+  // land borders only: maritime lines would draw over the sea
+  const boundaries = vt.layers.boundary;
+  if (boundaries) {
+    const countries: string[] = [];
+    const states: string[] = [];
+    for (let i = 0; i < boundaries.length; i++) {
+      const f = boundaries.feature(i);
+      if (f.type !== 2 || f.properties.maritime === 1) continue;
+      const level = Number(f.properties.admin_level);
+      if (level === 2) countries.push(linesD(f.loadGeometry()));
+      else if (level === 4) states.push(linesD(f.loadGeometry()));
+    }
+    out.countryBorders = countries.join('');
+    out.stateBorders = states.join('');
   }
 
   const buildings = vt.layers.building;

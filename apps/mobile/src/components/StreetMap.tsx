@@ -1,7 +1,9 @@
 /**
  * The flat map you reach by zooming into the globe. It opens at the globe's
- * scale as a satellite view from above (land, water, mountains, like Google
- * Earth) and, once you reach street level, turns into HS 2 from
+ * scale as the globe's own drawing, closer: green land, blue water, rivers,
+ * country and state borders, white ice, tan deserts. Nearer the ground it
+ * becomes a satellite view (land, water, mountains, like Google Earth) and,
+ * once you reach street level, turns into HS 2 from
  * Sketches/Home Screen.png: white ground, thick black streets with their names
  * in white. The selected location stays the red ring the whole way down.
  *
@@ -13,9 +15,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
-import Svg, { Circle, Ellipse, G, Path, Text as SvgText } from 'react-native-svg';
+import { geoMercator, geoPath, type GeoPermissibleObjects } from 'd3-geo';
+import Svg, { Circle, Ellipse, G, Path, Rect, Text as SvgText } from 'react-native-svg';
+import { feature } from 'topojson-client';
 import type { LatLng } from '@get/shared';
 import { colors, fonts } from '../theme';
+import surfaces from './surfaces.json';
 import { T } from './ui';
 import { ATTRIBUTION, BUILDINGS_ZOOM, ROADS, TILE_MAX_ZOOM, fromWorld, getBuildings, getTile, onTilesChanged, peekTile, toWorld, type Label, type TileData } from './tiles';
 
@@ -24,6 +29,9 @@ const MIN_ZOOM = 2;
 const MAX_ZOOM = 19;
 /** tapping the pin on the globe flies all the way down to here */
 const PIN_ZOOM = 16;
+/** the drawn map gives way to the satellite view between these */
+const SATELLITE_FROM = 10.5;
+const SATELLITE_FULL = 11.5;
 /** the satellite view gives way to the black-and-white streets between these */
 const STREETS_FROM = 14.4;
 const STREETS_FULL = 15.4;
@@ -36,6 +44,12 @@ const SAT_MAX_ZOOM = 18;
 const SAT_ATTRIBUTION = 'Esri, Maxar, Earthstar Geographics';
 
 type View2 = { x: number; y: number; zoom: number };
+
+// the globe's ice and deserts (see Globe.tsx), so they carry on into the drawn map
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const surf = surfaces as any;
+const ICE = feature(surf, surf.objects.ice) as unknown as GeoPermissibleObjects;
+const DESERT = feature(surf, surf.objects.desert) as unknown as GeoPermissibleObjects;
 
 type Props = {
   width: number;
@@ -267,7 +281,8 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   const seen = new Set<string>();
   const streets = clamp((zoom - STREETS_FROM) / (STREETS_FULL - STREETS_FROM), 0, 1);
   const buildings = clamp((zoom - BUILDINGS_FROM) / (BUILDINGS_FULL - BUILDINGS_FROM), 0, 1);
-  if (enter.key && streets > 0) {
+  const drawn = 1 - clamp((zoom - SATELLITE_FROM) / (SATELLITE_FULL - SATELLITE_FROM), 0, 1);
+  if (enter.key && (streets > 0 || drawn > 0)) {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const ox = width / 2 + (tx - cxT) * ts;
@@ -321,6 +336,31 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
         )}
     </G>
   );
+
+  // the drawn map: the globe's colours, with OpenStreetMap's water, rivers and borders
+  const drawTileDrawn = ({ key, tile, ox, oy, s }: Placed) => (
+    <G key={key} transform={`translate(${ox} ${oy}) scale(${s})`}>
+      {!!tile.water && <Path d={tile.water} fill={colors.ocean} />}
+      {!!tile.rivers && <Path d={tile.rivers} fill="none" stroke={colors.ocean} strokeWidth={1.1 / s} strokeLinejoin="round" />}
+      {!!tile.stateBorders && <Path d={tile.stateBorders} fill="none" stroke={colors.landStroke} strokeWidth={0.7 / s} opacity={0.75} />}
+      {!!tile.countryBorders && <Path d={tile.countryBorders} fill="none" stroke={colors.landStroke} strokeWidth={1.3 / s} />}
+    </G>
+  );
+  let iceD = '';
+  let desertD = '';
+  if (enter.key && drawn > 0) {
+    const Wd = worldPx(zoom);
+    const mercator = geoMercator()
+      .scale(Wd / (2 * Math.PI))
+      .translate([width / 2 + (0.5 - cxW) * Wd, height / 2 + (0.5 - cyW) * Wd])
+      .clipExtent([
+        [-10, -10],
+        [width + 10, height + 10],
+      ]);
+    const path = geoPath(mercator);
+    iceD = path(ICE) ?? '';
+    desertD = path(DESERT) ?? '';
+  }
 
   const sel = toWorld(selected.lng, selected.lat);
   const W = worldPx(zoom);
@@ -380,7 +420,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
     return out;
   };
   const satZ = clamp(Math.floor(zoom + 1.5), 1, SAT_MAX_ZOOM);
-  const sat = enter.key && streets < 1 ? [...(satZ > 3 ? satellite(satZ - 3) : []), ...satellite(satZ)] : [];
+  const sat = enter.key && streets < 1 && drawn < 1 ? [...(satZ > 3 ? satellite(satZ - 3) : []), ...satellite(satZ)] : [];
 
   return (
     <View style={[styles.root, { width, height }]} {...responder.panHandlers} {...(webWheel as object)}>
@@ -391,7 +431,17 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
       </View>
       {streets > 0 && <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.white, opacity: streets }]} pointerEvents="none" />}
       <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
-        <G opacity={streets}>
+        {!!enter.key && drawn > 0 && (
+          <G opacity={drawn}>
+            <Rect x={0} y={0} width={width} height={height} fill={colors.land} />
+            {!!desertD && <Path d={desertD} fill={colors.desert} />}
+            {!!iceD && <Path d={iceD} fill={colors.ice} />}
+            {below.map(drawTileDrawn)}
+            {tiles.map(drawTileDrawn)}
+          </G>
+        )}
+        {streets > 0 && (
+          <G opacity={streets}>
         {below.map(drawTile)}
         {tiles.map(drawTile)}
         {labels.map(({ l, x, y, size }, i) => (
@@ -409,6 +459,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           </SvgText>
         ))}
         </G>
+        )}
         {!!enter.key && (
           <G>
             <Ellipse cx={pin.x} cy={pin.y + 15} rx={8} ry={3} fill="#000" opacity={0.3} />
@@ -418,7 +469,7 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
         )}
       </Svg>
       <T style={[styles.attribution, streets < 0.5 && { color: colors.hairline }]} pointerEvents="none">
-        {streets < 0.5 ? SAT_ATTRIBUTION : ATTRIBUTION}
+        {streets < 0.5 && drawn < 0.5 ? SAT_ATTRIBUTION : ATTRIBUTION}
       </T>
     </View>
   );
