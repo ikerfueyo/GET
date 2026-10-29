@@ -58,6 +58,7 @@ uniform shader borders;
 uniform float2 center;
 uniform float radius;
 uniform float px;
+uniform float lineWidth;
 uniform float3 P;
 uniform float3 R;
 uniform float3 U;
@@ -95,9 +96,10 @@ half4 main(float2 xy) {
   c = mix(c, desert, cover(dist.g, fp));
   c = mix(c, ice, cover(dist.b, fp));
 
-  // borders 0.6 points wide: the part of this pixel that overlaps the line
+  // borders lineWidth points wide: the part of this pixel that overlaps the line
+  // (texels are stretched east-west towards the poles, so widen by about that)
   float bd = float(borders.eval(uv).r) * 255.0 / 64.0;
-  float h = 0.3 * perPoint;
+  float h = 0.5 * lineWidth * perPoint / sqrt(max(cos(lat), 0.12));
   float line = clamp(min(h, bd + fp * 0.5) - max(-h, bd - fp * 0.5), 0.0, fp) / fp;
   c = mix(c, border, line * cover(dist.r, fp));
 
@@ -476,6 +478,8 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
                 center: [cx, cy],
                 radius: r,
                 px: 1 / PixelRatio.get(),
+                // a hairline from afar, a little bolder up close
+                lineWidth: 0.6 * Math.min(zoom, MAX_ZOOM) ** 0.25,
                 P,
                 R,
                 U,

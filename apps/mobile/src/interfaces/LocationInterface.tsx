@@ -177,9 +177,11 @@ export function LocationInterface({ top }: { top: number }) {
       {menuLoc ? (
         <View style={[styles.menu, { left: menuLeft }]}>
           <View style={styles.menuHead}>
-            <T numberOfLines={3} style={styles.menuAddress}>
-              {menuLoc.address}
-            </T>
+            {addressLines(menuLoc.address).map((line, i) => (
+              <T key={i} style={styles.menuAddress}>
+                {line}
+              </T>
+            ))}
           </View>
           <MenuItem
             label="Edit"
@@ -434,7 +436,7 @@ const styles = StyleSheet.create({
   deleteText: { fontSize: 13, textAlign: 'center', marginTop: 2 },
   headCenter: { alignItems: 'center', flex: 1, marginHorizontal: 6 },
   headLabel: { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  addressBlock: { marginTop: 14, marginBottom: 10 },
+  addressBlock: { marginTop: 22, marginBottom: 10 },
   addressLine: { fontSize: 15, fontWeight: '600', lineHeight: 20 },
   fieldLabel: { fontSize: 15, fontWeight: '600', marginTop: 10, marginBottom: 4 },
   field: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.white, borderRadius: 6, borderWidth: 1, borderColor: colors.black, paddingHorizontal: 10, height: 38 },
