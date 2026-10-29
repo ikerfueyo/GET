@@ -338,12 +338,13 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 const styles = StyleSheet.create({
   panel: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: 10,
+    right: 10,
     backgroundColor: colors.panel,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
+    borderWidth: 1,
+    borderRadius: 10,
     borderColor: colors.black,
+    overflow: 'hidden',
     zIndex: 15,
   },
   chev: { fontSize: 26, lineHeight: 26 },

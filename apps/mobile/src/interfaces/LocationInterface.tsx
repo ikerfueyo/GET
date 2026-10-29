@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   strip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#BDBDBD',
+    backgroundColor: colors.panel,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.black,
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#BDBDBD',
+    backgroundColor: colors.panel,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.black,
