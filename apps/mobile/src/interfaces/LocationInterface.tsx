@@ -295,7 +295,7 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
     return (
       <View style={styles.form}>
         {header}
-        {/* the address block sits centred under the icon, its lines aligned left */}
+        {/* the address on its lines, centred under the icon */}
         <View style={styles.deleteAddress}>
           {addressLines(loc.address).map((line, i) => (
             <T key={i} style={styles.deleteText}>
@@ -537,7 +537,7 @@ const styles = StyleSheet.create({
   doneBtn: { backgroundColor: colors.black, alignItems: 'center' },
   headText: { fontSize: 15 },
   deleteAddress: { alignSelf: 'center', marginTop: 4 },
-  deleteText: { fontSize: 13, textAlign: 'left' },
+  deleteText: { fontSize: 13, textAlign: 'center' },
   shareCard: { flexDirection: 'row', height: SHARE_MAP_H, marginTop: 12, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: colors.black },
   shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 10 },
   shareAddressLine: { color: colors.white, fontSize: 13, fontWeight: '600', lineHeight: 17 },
