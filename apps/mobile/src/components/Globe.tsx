@@ -98,7 +98,10 @@ half4 main(float2 xy) {
 
   // borders lineWidth points wide: the part of this pixel that overlaps the line
   // (texels are stretched east-west towards the poles, so widen by about that)
-  float bd = float(borders.eval(uv).r) * 255.0 / 64.0;
+  // up close the signed distance (g), which stays exact between texels
+  half2 b = borders.eval(uv).rg;
+  float bd = float(b.r) * 255.0 / 64.0;
+  if (bd < 2.0) bd = abs(float(b.g) * 255.0 - 128.0) / 32.0;
   float h = 0.5 * lineWidth * perPoint / sqrt(max(cos(lat), 0.12));
   float line = clamp(min(h, bd + fp * 0.5) - max(-h, bd - fp * 0.5), 0.0, fp) / fp;
   c = mix(c, border, line * cover(dist.r, fp));
@@ -479,7 +482,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
                 radius: r,
                 px: 1 / PixelRatio.get(),
                 // a hairline from afar, a little bolder up close
-                lineWidth: 0.6 * Math.min(zoom, MAX_ZOOM) ** 0.25,
+                lineWidth: 0.6 * Math.min(zoom, MAX_ZOOM) ** 0.4,
                 P,
                 R,
                 U,

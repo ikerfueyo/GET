@@ -89,7 +89,7 @@ export function SideBar({ top, bounds, slideX }: { top: number; bounds: { width:
               wake();
               setPanel(active ? null : key);
             }}
-            style={[styles.btn, i > 0 && styles.divider]}
+            style={[styles.btn, i > 0 && styles.divider, active && styles.active, i === 0 && styles.first, i === items.length - 1 && styles.last]}
           >
             <Icon size={18} color={active ? accent : colors.black} />
           </Pressable>
@@ -98,6 +98,9 @@ export function SideBar({ top, bounds, slideX }: { top: number; bounds: { width:
     </Animated.View>
   );
 }
+
+// the open interface's square takes the panels' grey
+const ACTIVE_BG = colors.panel;
 
 const styles = StyleSheet.create({
   bar: {
@@ -117,5 +120,9 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   btn: { height: 34, alignItems: 'center', justifyContent: 'center' },
+  active: { backgroundColor: ACTIVE_BG },
+  // the shade follows the bar's rounded corners
+  first: { borderTopLeftRadius: 5, borderTopRightRadius: 5 },
+  last: { borderBottomLeftRadius: 5, borderBottomRightRadius: 5 },
   divider: { borderTopWidth: 1, borderTopColor: colors.line }, // same black as the bar's outline
 });
