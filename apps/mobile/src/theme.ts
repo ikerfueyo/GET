@@ -5,7 +5,7 @@ export const colors = {
   black: '#000000',
   white: '#FFFFFF',
   ink: '#111111',
-  panel: '#9E9E9E', // Orders Interface background
+  panel: '#BDBDBD', // open Location, Orders and Account panels
   field: '#E3E3E3', // "Search GET" field
   line: '#1A1A1A',
   hairline: '#D0D0D0',
