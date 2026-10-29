@@ -1,28 +1,39 @@
-/** LS 1–4: white background gradually turns black around the logo, then the Home Screen fades in. */
+/**
+ * LS 1–4: the logo waits on a white page while the session and catalogue load.
+ * Once `dark` is set, the background gradually turns black around the logo,
+ * then the Home Screen fades in.
+ */
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet } from 'react-native';
 import { Logo } from './components/Logo';
 
-export function LoadingScreen({ onDone }: { onDone: () => void }) {
+export const SPLASH_LOGO = 110;
+
+/** The darkening used both here and when leaving the sign-in page. */
+export function darken(t: Animated.Value) {
+  return Animated.sequence([
+    Animated.delay(250),
+    Animated.timing(t, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
+    Animated.delay(150),
+  ]);
+}
+
+export function LoadingScreen({ dark, onDone, onLayout }: { dark: boolean; onDone: () => void; onLayout?: () => void }) {
   const t = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.delay(250),
-      Animated.timing(t, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
-      Animated.delay(150),
-    ]).start(() => onDone());
+    if (dark) darken(t).start(() => onDone());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [dark]);
 
   const backgroundColor = t.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#000000'] });
   // the black mark disappears into the black background, as in LS 4
   const opacity = t.interpolate({ inputRange: [0, 0.75, 1], outputRange: [1, 1, 0] });
 
   return (
-    <Animated.View style={[styles.root, { backgroundColor }]}>
+    <Animated.View style={[styles.root, { backgroundColor }]} onLayout={onLayout}>
       <Animated.View style={{ opacity }}>
-        <Logo size={110} />
+        <Logo size={SPLASH_LOGO} />
       </Animated.View>
     </Animated.View>
   );
