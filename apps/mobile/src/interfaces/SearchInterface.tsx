@@ -310,12 +310,16 @@ function Bundle({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
+  // the side borders sit just off-screen so only the top edge (and its rounded corners) shows
   sheet: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: -1,
+    right: -1,
     bottom: 0,
     backgroundColor: colors.white,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: colors.black,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     zIndex: 40,
