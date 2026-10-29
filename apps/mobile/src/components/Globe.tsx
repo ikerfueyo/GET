@@ -10,7 +10,7 @@
  * runs in Expo Go and on the web without native 3D. The stars are seen through
  * a perspective camera floating above the point at the centre.
  */
-import { geoDistance, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
+import { geoCircle, geoDistance, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
@@ -153,6 +153,20 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
   const bordersD = path(BORDERS) ?? '';
 
   const center: [number, number] = [-lambda, -phi];
+
+  // night: the hemisphere facing away from the real Sun, darkening in six
+  // light bands from the terminator inwards, so the edge reads as twilight
+  const sky = useMemo(() => skyAt(now), [now]);
+  const sunLen = Math.hypot(...sky.sun);
+  const antiSun: [number, number] = [
+    (Math.atan2(-sky.sun[1], -sky.sun[0]) * 180) / Math.PI,
+    (Math.asin(-sky.sun[2] / sunLen) * 180) / Math.PI,
+  ];
+  const nightDs = useMemo(
+    () => [90, 87, 84, 81, 78, 75].map((radius) => path(geoCircle().center(antiSun).radius(radius)()) ?? ''),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projection, antiSun[0], antiSun[1]],
+  );
   const pinVisible = geoDistance([selected.lng, selected.lat], center) < Math.PI / 2 - 0.02;
   const pin = pinVisible ? projection([selected.lng, selected.lat]) : null;
 
@@ -254,7 +268,6 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
   // ── the stars, through a camera above the centre point ──
   // focal length: about 70° of view across the screen's long side
   const focal = Math.max(width, height) / 2 / Math.tan(rad(35));
-  const sky = useMemo(() => skyAt(now), [now]);
   const stars = useMemo(() => starsAt(sky.gmst), [sky]);
   const P = unit(center[1], center[0]);
   const F: Vec = [-P[0], -P[1], -P[2]]; // looking down at the Earth
@@ -375,6 +388,9 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
         <Path d={desertD} fill={colors.desert} />
         <Path d={iceD} fill={colors.ice} />
         <Path d={bordersD} fill="none" stroke={colors.landStroke} strokeWidth={0.6} />
+        {nightDs.map((d, i) => (
+          <Path key={i} d={d} fill={colors.night} opacity={0.075} />
+        ))}
         <Circle cx={cx} cy={cy} r={r} fill="url(#shade)" />
 
         {pin && (
