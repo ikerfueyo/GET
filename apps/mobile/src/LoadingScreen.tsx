@@ -18,7 +18,7 @@ export function darken(t: Animated.Value) {
   ]);
 }
 
-export function LoadingScreen({ dark, onDone }: { dark: boolean; onDone: () => void }) {
+export function LoadingScreen({ dark, onDone, onLayout }: { dark: boolean; onDone: () => void; onLayout?: () => void }) {
   const t = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function LoadingScreen({ dark, onDone }: { dark: boolean; onDone: () => v
   const opacity = t.interpolate({ inputRange: [0, 0.75, 1], outputRange: [1, 1, 0] });
 
   return (
-    <Animated.View style={[styles.root, { backgroundColor }]}>
+    <Animated.View style={[styles.root, { backgroundColor }]} onLayout={onLayout}>
       <Animated.View style={{ opacity }}>
         <Logo size={SPLASH_LOGO} />
       </Animated.View>

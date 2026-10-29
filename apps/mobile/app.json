@@ -12,7 +12,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -24,12 +24,21 @@
       "favicon": "./assets/favicon.png"
     },
     "scheme": "get",
-    "backgroundColor": "#000000",
+    "backgroundColor": "#FFFFFF",
     "plugins": [
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "GET uses your location to find the closest, fastest way to get anything."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 110,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
         }
       ]
     ],

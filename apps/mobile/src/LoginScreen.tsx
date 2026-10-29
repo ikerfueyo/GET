@@ -16,7 +16,7 @@ import { colors, fonts } from './theme';
 
 type Mode = 'sign_in' | 'register';
 
-const LOGO = 68;
+const LOGO = 56;
 const native = Platform.OS !== 'web';
 
 export function LoginScreen({ intro, leaving, onLeft }: { intro: boolean; leaving: boolean; onLeft: () => void }) {

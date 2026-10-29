@@ -1,3 +1,4 @@
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -8,6 +9,10 @@ import { LoginScreen } from './src/LoginScreen';
 import { AppStateProvider } from './src/state/AppState';
 import { AuthProvider, useAuth } from './src/state/Auth';
 import { catalogReady } from './src/state/remote';
+
+// the native launch screen (white, logo at the same size and spot) stays up until
+// LoadingScreen has drawn, then hands over with no fade, so the logo never moves
+SplashScreen.preventAutoHideAsync();
 
 // the catalogue loads from Supabase while the loading screen plays
 catalogReady();
@@ -73,7 +78,7 @@ function Root() {
       )}
       {stage === 'login' && <LoginScreen intro={loginIntro} leaving={!!user} onLeft={() => setStage('home')} />}
       {failed && <ConnectError onRetry={loadCatalog} />}
-      {(stage === 'splash' || stage === 'darken') && !failed && <LoadingScreen dark={stage === 'darken'} onDone={() => setStage('home')} />}
+      {(stage === 'splash' || stage === 'darken') && !failed && <LoadingScreen dark={stage === 'darken'} onDone={() => setStage('home')} onLayout={() => SplashScreen.hide()} />}
     </>
   );
 }
