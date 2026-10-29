@@ -129,8 +129,8 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   const g = useRef({ mode: 'none' as Mode, base: view.current, dx0: 0, dy0: 0, d0: 0, wp: { x: 0, y: 0 }, t: 0, moved: false });
   const touchesOf = (e: GestureResponderEvent) => e.nativeEvent.touches ?? [];
 
-  const latest = useRef({ width, height, onExit });
-  latest.current = { width, height, onExit };
+  const latest = useRef({ width, height, onExit, selected });
+  latest.current = { width, height, onExit, selected };
 
   const screenToWorld = (sx: number, sy: number, v: View2 = view.current) => {
     const W = worldPx(v.zoom);
@@ -185,7 +185,23 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           redraw();
         },
         onPanResponderRelease: (e, gs) => {
-          if (!g.current.moved) return; // a tap; the selected location only changes from the Location Interface
+          if (!g.current.moved) {
+            // a tap: on the red pin it flies down to the streets; anywhere else it does
+            // nothing, since the selected location only changes from the Location Interface
+            const sel = latest.current.selected;
+            const p = toWorld(sel.lng, sel.lat);
+            const W = worldPx(view.current.zoom);
+            const { width: w, height: h } = latest.current;
+            let dx = (p.x - view.current.x) * W;
+            if (dx > W / 2) dx -= W;
+            if (dx < -W / 2) dx += W;
+            const px = w / 2 + dx;
+            const py = h / 2 + (p.y - view.current.y) * W;
+            if (Math.hypot(e.nativeEvent.locationX - px, e.nativeEvent.locationY - py) < 28) {
+              animate({ ...p, zoom: Math.max(PIN_ZOOM, view.current.zoom) }, 1400);
+            }
+            return;
+          }
           if (view.current.zoom < exitBelow.current) return exit();
           if (g.current.mode !== 'pan') return;
           // a little inertia after a flick
