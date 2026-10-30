@@ -12,6 +12,7 @@ import {
   formatMoney,
   optionsForOffer,
   productById,
+  storeAddress,
   storeById,
   type Mode,
   type Order,
@@ -162,7 +163,7 @@ function CartSheet({ cart, onClose, onAddItem }: { cart: Cart; onClose: () => vo
       <ScrollView>
         <T style={styles.storeTitle}>{store.name}</T>
         <T style={styles.storeSub}>
-          {store.address} · ★ {store.rating.toFixed(1)}
+          {storeAddress(store)} · ★ {store.rating.toFixed(1)}
           {store.verified ? ' · ✓ verified' : ''}
         </T>
         {lines.map((l) => {
@@ -210,7 +211,7 @@ function CartSheet({ cart, onClose, onAddItem }: { cart: Cart; onClose: () => vo
 
         {cart.mode === 'in_store' && (
           <View style={styles.info}>
-            <T style={styles.infoText}>📍 {store.address}, {store.city}</T>
+            <T style={styles.infoText}>📍 {storeAddress(store)}</T>
             <T style={styles.infoText}>Store checkout only · open {store.hours}</T>
             <Pressable
               style={styles.goBtn}
@@ -225,7 +226,7 @@ function CartSheet({ cart, onClose, onAddItem }: { cart: Cart; onClose: () => vo
         )}
         {cart.mode === 'pickup' && (
           <View style={styles.info}>
-            <T style={styles.infoText}>Ready in about {formatEta(eta)} at {store.address}</T>
+            <T style={styles.infoText}>Ready in about {formatEta(eta)} at {storeAddress(store)}</T>
           </View>
         )}
         {cart.mode === 'delivery' && (

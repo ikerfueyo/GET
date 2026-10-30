@@ -31,9 +31,10 @@ import {
 import { geoDistance, geoOrthographic } from 'd3-geo';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, PixelRatio, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
-import Svg, { Circle as SvgCircle } from 'react-native-svg';
-import type { LatLng } from '@get/shared';
+import Svg, { Circle as SvgCircle, G as SvgG } from 'react-native-svg';
+import type { LatLng, SavedLocation } from '@get/shared';
 import { colors } from '../theme';
+import { placeShapes } from './Icons';
 import { MOON_RADIUS, dotRadius, skyAt, starsAt, type Vec } from './sky';
 
 // The map, baked as distance fields (scripts/bake-earth.ts, bake-sdf.py): each
@@ -134,7 +135,8 @@ const MAX_ZOOM = 12;
 type Props = {
   width: number;
   height: number;
-  selected: LatLng;
+  /** the pin shows the location's own icon (Here's ring, Home, Work, ...) */
+  selected: LatLng & { icon?: SavedLocation['icon'] };
   /** when this object changes the globe flies to it */
   focus?: { point: LatLng; zoom?: number; key: number };
   /**
@@ -535,7 +537,7 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
           pointerEvents="none"
         >
           <SvgCircle cx={PIN_BOX / 2} cy={PIN_BOX / 2} r={11} fill={colors.red} />
-          <SvgCircle cx={PIN_BOX / 2} cy={PIN_BOX / 2} r={4.6} fill={colors.white} />
+          <SvgG transform={`translate(${PIN_BOX / 2 - 6.5} ${PIN_BOX / 2 - 6.5}) scale(${13 / 24})`}>{placeShapes(selected.icon ?? 'here', colors.white)}</SvgG>
         </Svg>
       )}
     </View>

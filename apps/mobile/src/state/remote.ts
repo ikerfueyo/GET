@@ -232,6 +232,22 @@ export async function insertLocation(userId: string, loc: SavedLocation, positio
   );
 }
 
+export async function updateLocation(id: string, patch: Partial<Omit<SavedLocation, 'id'>>) {
+  const row: Row = {};
+  if (patch.label !== undefined) row.label = patch.label;
+  if (patch.icon !== undefined) row.icon = patch.icon === 'here' ? 'pin' : patch.icon;
+  if (patch.address !== undefined) row.address = patch.address;
+  if (patch.lat !== undefined) row.lat = patch.lat;
+  if (patch.lng !== undefined) row.lng = patch.lng;
+  if ('buildingType' in patch) row.building_type = patch.buildingType ?? null;
+  if ('details' in patch) row.details = patch.details || null;
+  check(await db().from('saved_locations').update(row).eq('id', id));
+}
+
+export async function deleteLocation(id: string) {
+  check(await db().from('saved_locations').delete().eq('id', id));
+}
+
 export async function insertPaymentMethod(userId: string, pm: PaymentMethod) {
   check(
     await db().from('payment_methods').insert({

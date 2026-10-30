@@ -5,7 +5,7 @@
  * becomes a satellite view (land, water, mountains, like Google Earth) and,
  * once you reach street level, turns into HS 2 from
  * Sketches/Home Screen.png: white ground, thick black streets with their names
- * in white. The selected location stays the red ring the whole way down.
+ * in white. The selected location's red pin (with its own icon) stays the whole way down.
  *
  * Imagery is Esri World Imagery; streets are OpenStreetMap vector tiles (see
  * ./tiles) drawn with react-native-svg. Neither needs a map SDK or API key, so it
@@ -18,8 +18,9 @@ import { Image, PanResponder, Platform, StyleSheet, View, type GestureResponderE
 import { geoCircle, geoMercator, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import Svg, { Circle, Ellipse, G, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { feature } from 'topojson-client';
-import type { LatLng } from '@get/shared';
+import type { LatLng, SavedLocation } from '@get/shared';
 import { colors, fonts } from '../theme';
+import { placeShapes } from './Icons';
 import { skyAt } from './sky';
 import surfaces from './surfaces.json';
 import { T } from './ui';
@@ -56,7 +57,7 @@ type Props = {
   width: number;
   height: number;
   active: boolean;
-  selected: LatLng;
+  selected: LatLng & { icon?: SavedLocation['icon'] };
   /**
    * when the key changes the map opens on this point at the globe's scale
    * (its radius in px); with `streets` it then flies down to street level
@@ -65,6 +66,8 @@ type Props = {
   /** when the key changes the map flies to the point if it is out of view */
   focus: { point: LatLng; key: number };
   onExit?: (center: LatLng) => void;
+  /** a small capture (the Share card): the credits shrink to one line in the corner */
+  mini?: boolean;
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -73,7 +76,7 @@ const wrap = (x: number) => x - Math.floor(x);
 const worldPx = (zoom: number) => TILE * 2 ** zoom;
 const roadWidth = (base: number, zoom: number) => Math.max(0.8, base * 2 ** ((zoom - 16) * 0.8));
 
-export function StreetMap({ width, height, active, selected, enter, focus, onExit }: Props) {
+export function StreetMap({ width, height, active, selected, enter, focus, onExit, mini }: Props) {
   const start = toWorld(enter.point.lng, enter.point.lat);
   const view = useRef<View2>({ ...start, zoom: MIN_ZOOM });
   /** letting go below this zoom goes back to the globe */
@@ -474,11 +477,11 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           <G>
             <Ellipse cx={pin.x} cy={pin.y + 15} rx={8} ry={3} fill="#000" opacity={0.3} />
             <Circle cx={pin.x} cy={pin.y} r={13} fill={colors.red} />
-            <Circle cx={pin.x} cy={pin.y} r={5.5} fill={colors.white} />
+            <G transform={`translate(${pin.x - 7.75} ${pin.y - 7.75}) scale(${15.5 / 24})`}>{placeShapes(selected.icon ?? 'here', colors.white)}</G>
           </G>
         )}
       </Svg>
-      <T style={[styles.attribution, streets < 0.5 && { color: colors.hairline }]} pointerEvents="none">
+      <T style={[styles.attribution, streets < 0.5 && { color: colors.hairline }, mini && styles.miniAttribution]} numberOfLines={mini ? 1 : undefined} pointerEvents="none">
         {streets < 0.5 && drawn < 0.5 ? SAT_ATTRIBUTION : ATTRIBUTION}
       </T>
     </View>
@@ -488,4 +491,5 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
 const styles = StyleSheet.create({
   root: { backgroundColor: colors.black, overflow: 'hidden' },
   attribution: { position: 'absolute', right: 8, bottom: 18, fontSize: 9, color: colors.muted },
+  miniAttribution: { left: 3, right: 3, bottom: 1, fontSize: 5 },
 });

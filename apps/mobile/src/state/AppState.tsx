@@ -21,6 +21,7 @@ import {
 } from '@get/shared';
 import { useAuth } from './Auth';
 import * as remote from './remote';
+import { regionCode, type Place } from '../places';
 
 export interface CartLine {
   offerId: string;
@@ -52,8 +53,14 @@ interface AppState {
   selected: SavedLocation;
   selectLocation: (id: string) => void;
   /** a location picked on the globe or found by search; sits between Search and Here */
-  pickLocation: (p: LatLng, label?: string, address?: string) => void;
+  pickLocation: (p: LatLng, label?: string, address?: string, extra?: Pick<SavedLocation, 'buildingType' | 'details'>) => void;
+  /** places found with Location Search / Add, newest first (LI 11 / LI 16 "recent") */
+  recentPlaces: Place[];
+  addRecentPlace: (p: Place) => void;
   saveLocation: (loc: Omit<SavedLocation, 'id'>) => void;
+  /** Done on an Edit form; Here and a searched location only change on this device */
+  updateLocation: (id: string, patch: Partial<Omit<SavedLocation, 'id'>>) => void;
+  removeLocation: (id: string) => void;
   focusKey: number;
 
   panel: Panel;
@@ -166,21 +173,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // "Here" follows the phone's GPS when the user allows it.
+  // "Here" follows the phone's GPS while the app is open, when the user allows it.
   useEffect(() => {
+    let sub: { remove: () => void } | null = null;
+    let cancelled = false;
+    let first = true;
+    let geocoding = 0; // only the latest fix's address is kept
+    const setHere = (patch: Partial<SavedLocation>) => setLocations((ls) => ls.map((l) => (l.id === 'loc_here' ? { ...l, ...patch } : l)));
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        const pos = await Location.getCurrentPositionAsync({});
-        setLocations((ls) =>
-          ls.map((l) => (l.id === 'loc_here' ? { ...l, lat: pos.coords.latitude, lng: pos.coords.longitude, address: 'Current location' } : l)),
-        );
-        setFocusKey((k) => k + 1);
+        if (status !== 'granted' || cancelled) return;
+        sub = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 20, timeInterval: 5000 }, async (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setHere(first ? { lat: latitude, lng: longitude, address: 'Current location' } : { lat: latitude, lng: longitude });
+          if (first) setFocusKey((k) => k + 1); // fly there once; after that only the pin moves
+          first = false;
+          // then the street address, ending with the country (the phone's geocoder; not on web)
+          const n = ++geocoding;
+          const [g] = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
+          const street = g && [g.streetNumber, g.street].filter(Boolean).join(' ');
+          const region = g && [regionCode(g.region ?? undefined, g.country ?? undefined), g.postalCode].filter(Boolean).join(' ');
+          const address = g && [street || g.name, g.city, region, g.country].filter(Boolean).join(', ');
+          if (address && n === geocoding) setHere({ address });
+        });
+        if (cancelled) sub.remove();
       } catch {
         // keep the default "Here"
       }
     })();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
   }, []);
 
   const allLocations = useMemo(() => (picked ? [picked, ...locations] : locations), [picked, locations]);
@@ -192,11 +217,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setFocusKey((k) => k + 1);
   };
 
-  const pickLocation = (p: LatLng, label = 'Pinned', address?: string) => {
-    setPicked({ id: 'loc_picked', label, icon: 'pin', address: address ?? `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`, ...p });
+  const pickLocation = (p: LatLng, label = 'Pinned', address?: string, extra?: Pick<SavedLocation, 'buildingType' | 'details'>) => {
+    setPicked({ id: 'loc_picked', label, icon: 'pin', address: address ?? `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`, lat: p.lat, lng: p.lng, ...extra });
     setSelectedId('loc_picked');
     setFocusKey((k) => k + 1);
   };
+
+  const [recentPlaces, setRecentPlaces] = useState<Place[]>([]);
+  const addRecentPlace = (p: Place) =>
+    setRecentPlaces((rs) => [p, ...rs.filter((r) => r.name !== p.name || r.address !== p.address)].slice(0, 10));
 
   const saveLocation = (loc: Omit<SavedLocation, 'id'>) => {
     // "Add" places the location at the far right and does not select it
@@ -204,6 +233,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const position = locations.length;
     setLocations((ls) => [...ls, saved]);
     persist((uid) => remote.insertLocation(uid, saved, position));
+  };
+
+  const updateLocation = (id: string, patch: Partial<Omit<SavedLocation, 'id'>>) => {
+    if (id === 'loc_picked') {
+      setPicked((p) => (p ? { ...p, ...patch } : p));
+    } else {
+      setLocations((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+      if (id !== 'loc_here') persist(() => remote.updateLocation(id, patch));
+    }
+    if (patch.lat !== undefined || patch.lng !== undefined) setFocusKey((k) => k + 1);
+  };
+
+  const removeLocation = (id: string) => {
+    if (id === 'loc_here') return;
+    setLocations((ls) => ls.filter((l) => l.id !== id));
+    persist(() => remote.deleteLocation(id));
+    // if the deleted one was selected, Here becomes the selection
+    if (id === selectedId) selectLocation('loc_here');
   };
 
   const addToCart = (offerId: string, mode: Mode) => {
@@ -307,7 +354,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     selected,
     selectLocation,
     pickLocation,
+    recentPlaces,
+    addRecentPlace,
     saveLocation,
+    updateLocation,
+    removeLocation,
     focusKey,
     panel,
     setPanel,

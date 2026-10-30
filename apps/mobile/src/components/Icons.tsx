@@ -1,12 +1,59 @@
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import type { ReactNode } from 'react';
+import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
+import type { SavedLocation } from '@get/shared';
 
 type IconProps = { size?: number; color?: string };
+
+/** the pin with a see-through hole of radius `hole`, so whatever is behind it shows in the middle */
+const pinD = (hole: number) =>
+  `M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zM12 ${9 - hole}a${hole} ${hole} 0 1 0 0 ${2 * hole}a${hole} ${hole} 0 1 0 0-${2 * hole}z`;
+const PIN_D = pinD(2.6);
+// the side bar draws the pin at 18px; this hole is the same size on screen as Other's at 15px in the Location strip
+const SIDEBAR_PIN_D = pinD(2.15);
 
 export function PinIcon({ size = 18, color = '#000' }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill={color} />
-      <Circle cx={12} cy={9} r={2.6} fill="#fff" />
+      <Path d={SIDEBAR_PIN_D} fill={color} fillRule="evenodd" />
+    </Svg>
+  );
+}
+
+/**
+ * The shapes of each location's icon in a 24x24 box (Here is the ring, the
+ * rest are Home, Work, School and Other), so the strip, the forms and the pin
+ * on the globe and street map all draw the same thing.
+ */
+export function placeShapes(icon: SavedLocation['icon'], color: string): ReactNode {
+  switch (icon) {
+    case 'here':
+      return <Circle cx={12} cy={12} r={8.5} fill={color} />;
+    case 'home':
+      return <Path d="M12 2.5L1.5 12H5v9.5h5V15h4v6.5h5V12h3.5z" fill={color} />;
+    case 'work':
+      return (
+        <G>
+          <Path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke={color} strokeWidth={2.2} fill="none" />
+          <Rect x={2} y={7} width={20} height={13} rx={2.5} fill={color} />
+        </G>
+      );
+    case 'school':
+      return (
+        <G>
+          <Path d="M12 3.5L23 9l-11 5.5L1 9z" fill={color} />
+          <Path d="M5.5 11.8V16c0 1.9 2.9 3.5 6.5 3.5s6.5-1.6 6.5-3.5v-4.2L12 15.1z" fill={color} />
+          <Path d="M20.8 9.6v6" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+        </G>
+      );
+    default:
+      return <Path d={PIN_D} fill={color} fillRule="evenodd" />;
+  }
+}
+
+export function PlaceIcon({ icon, size = 18, color = '#000' }: IconProps & { icon: SavedLocation['icon'] }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {placeShapes(icon, color)}
     </Svg>
   );
 }
@@ -36,23 +83,6 @@ export function SearchIcon({ size = 18, color = '#000' }: IconProps) {
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Circle cx={10} cy={10} r={6.5} stroke={color} strokeWidth={2.4} fill="none" />
       <Path d="M15 15l6 6" stroke={color} strokeWidth={2.6} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-export function HomeIcon({ size = 18, color = '#000' }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M12 2.5L1.5 12H5v9.5h5V15h4v6.5h5V12h3.5z" fill={color} />
-    </Svg>
-  );
-}
-
-export function WorkIcon({ size = 18, color = '#000' }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke={color} strokeWidth={2.2} fill="none" />
-      <Rect x={2} y={7} width={20} height={13} rx={2.5} fill={color} />
     </Svg>
   );
 }
