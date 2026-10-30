@@ -244,7 +244,7 @@ function MenuItem({ label, onPress, danger, last }: { label: string; onPress: ()
 
 /**
  * LI 3 (edit Here), LI 4 (save Here or a searched place), LI 9 (edit a saved
- * place) and LI 10 (delete one). Cancel | the location's icon | Done.
+ * place) and LI 10 (delete one). Cancel | the location's icon | Save (or Delete).
  */
 function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => void; onDone: (patch: Partial<Omit<SavedLocation, 'id'>>) => void }) {
   const { kind, loc } = form;
@@ -257,6 +257,16 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
   const [name, setName] = useState(kind === 'save' ? (loc.icon === 'here' ? firstLine : loc.label) : loc.label);
   const withLabel = kind === 'save' || (kind === 'edit' && !isCurrent(loc));
   const shown: Icon = kind === 'delete' ? loc.icon : withLabel ? icon : loc.icon;
+  const label = name.trim() || LABEL_ICONS.find((l) => l.icon === icon)?.name || loc.label;
+  const patch: Partial<Omit<SavedLocation, 'id'>> = {
+    buildingType: building,
+    details: details.trim() || undefined,
+    ...(withLabel ? { icon, label } : {}),
+  };
+  // an edit can only be saved once it would change something (changing a box back counts as no change)
+  const changed =
+    building !== loc.buildingType || (patch.details ?? '') !== (loc.details ?? '') || (withLabel && (icon !== loc.icon || label !== loc.label));
+  const canSubmit = kind !== 'edit' || changed;
 
   const header = (
     <View style={styles.formHead}>
@@ -270,22 +280,14 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
         </T>
       </View>
       <Pressable
-        onPress={() =>
-          onDone(
-            kind === 'delete'
-              ? {}
-              : {
-                  buildingType: building,
-                  details: details.trim() || undefined,
-                  ...(withLabel ? { icon, label: name.trim() || LABEL_ICONS.find((l) => l.icon === icon)?.name || loc.label } : {}),
-                },
-          )
-        }
+        onPress={() => onDone(kind === 'delete' ? {} : patch)}
+        disabled={!canSubmit}
         hitSlop={8}
-        style={[styles.headBtn, styles.doneBtn, kind === 'delete' && { backgroundColor: colors.red }]}
-        accessibilityLabel={kind === 'delete' ? 'Delete' : 'Done'}
+        style={[styles.headBtn, styles.doneBtn, kind === 'delete' && { backgroundColor: colors.red }, !canSubmit && styles.doneOff]}
+        accessibilityLabel={kind === 'delete' ? 'Delete' : 'Save'}
+        accessibilityState={{ disabled: !canSubmit }}
       >
-        <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>{kind === 'delete' ? 'Delete' : 'Done'}</T>
+        <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>{kind === 'delete' ? 'Delete' : 'Save'}</T>
       </Pressable>
     </View>
   );
@@ -493,6 +495,7 @@ const styles = StyleSheet.create({
   formHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headBtn: { minWidth: 64, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6 },
   doneBtn: { backgroundColor: colors.black, alignItems: 'center' },
+  doneOff: { backgroundColor: colors.muted },
   headText: { fontSize: 15 },
   deleteAddress: { alignSelf: 'center', marginTop: 10, marginBottom: 6 },
   deleteText: { fontSize: 13, textAlign: 'center' },
