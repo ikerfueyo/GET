@@ -7,12 +7,12 @@
  * Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
  */
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { addressLines, type SavedLocation } from '@get/shared';
-import { BackIcon, ChevronIcon, CloseIcon, PlaceIcon, PlusIcon, SearchIcon } from '../components/Icons';
+import { BackIcon, CheckIcon, ChevronIcon, CloseIcon, PlaceIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { StreetMap } from '../components/StreetMap';
 import { T } from '../components/ui';
-import { searchPlaces, type Place } from '../places';
+import { geocode, placeSubtitle, searchPlaces, type Place } from '../places';
 import { useApp } from '../state/AppState';
 import { colors, fonts } from '../theme';
 
@@ -43,10 +43,14 @@ function LocationGlyph({ icon, selected, size = 34 }: { icon: Icon; selected: bo
   );
 }
 
-type Form = { kind: 'edit' | 'save' | 'delete' | 'share'; loc: SavedLocation };
+/** pick = confirm a searched place (LI 14, no label); save = save Here, a searched place or an added one (LI 4 / LI 19) */
+type Form = { kind: 'edit' | 'save' | 'pick' | 'delete' | 'share'; loc: SavedLocation };
+
+const placeToLocation = (p: Place): SavedLocation => ({ id: 'loc_new', label: p.name, icon: 'pin', address: p.address, lat: p.lat, lng: p.lng });
 
 export function LocationInterface({ top }: { top: number }) {
-  const { locations, selected, selectLocation, pickLocation, saveLocation, updateLocation, removeLocation } = useApp();
+  const { locations, selected, selectLocation, pickLocation, saveLocation, updateLocation, removeLocation, recentPlaces, addRecentPlace } = useApp();
+  const { width, height } = useWindowDimensions();
   const [mode, setMode] = useState<'strip' | 'search' | 'add'>('strip');
   const [query, setQuery] = useState('');
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -56,11 +60,51 @@ export function LocationInterface({ top }: { top: number }) {
   const scrollLeft = useRef(0); // where the scrolling part starts inside the strip
   const [menuLeft, setMenuLeft] = useState(0);
 
-  const results = searchPlaces(query);
+  // LI 12 / LI 17: what's typed is looked up worldwide (GET's stores and a few cities first)
+  const [found, setFound] = useState<Place[]>([]);
+  const [looking, setLooking] = useState(false);
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    setOffline(false);
+    if (mode === 'strip' || q.length < 2) {
+      setFound([]);
+      setLooking(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    setLooking(true);
+    const t = setTimeout(() => {
+      geocode(q, selected, ctrl.signal)
+        .then(setFound)
+        .catch(() => {
+          if (!ctrl.signal.aborted) setOffline(true);
+        })
+        .finally(() => !ctrl.signal.aborted && setLooking(false));
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, mode]);
+  const local = query.trim() ? searchPlaces(query, 4) : [];
+  const results = query.trim()
+    ? [...local, ...found.filter((f) => !local.some((l) => Math.abs(l.lat - f.lat) < 1e-3 && Math.abs(l.lng - f.lng) < 1e-3))]
+    : recentPlaces.length
+      ? recentPlaces
+      : searchPlaces('');
+  const listHeader = query.trim() ? null : recentPlaces.length ? 'Recent' : 'Suggested';
 
+  // LI 13 / LI 18: the chosen place on the street map, to confirm with ✓
+  const [preview, setPreview] = useState<Place | null>(null);
   const choose = (p: Place) => {
-    if (mode === 'search') pickLocation(p, p.name, p.address);
-    else saveLocation({ label: p.name, icon: 'pin', address: p.address, lat: p.lat, lng: p.lng });
+    addRecentPlace(p);
+    setPreview(p);
+  };
+  const finish = () => {
+    setForm(null);
+    setPreview(null);
     setMode('strip');
     setQuery('');
   };
@@ -72,26 +116,70 @@ export function LocationInterface({ top }: { top: number }) {
     setMenuFor(id);
   };
 
+  const previewMap = preview && (
+    <View style={StyleSheet.absoluteFill}>
+      <StreetMap
+        key={`${preview.lat},${preview.lng}`}
+        width={width}
+        height={height}
+        active
+        selected={{ ...preview, icon: 'pin' }}
+        enter={{ point: preview, key: 1, streets: true }}
+        focus={{ point: preview, key: 1 }}
+      />
+    </View>
+  );
+
   if (form) {
     return (
-      <View style={[styles.wrap, { top }]}>
-        {form.kind === 'share' ? (
-          <LocationShare loc={form.loc} onCancel={() => setForm(null)} />
-        ) : (
-          <LocationForm
-            form={form}
-            onCancel={() => setForm(null)}
-            onDone={(patch) => {
-              if (form.kind === 'edit') updateLocation(form.loc.id, patch);
-              else if (form.kind === 'save') {
-                const { id: _id, ...rest } = { ...form.loc, ...patch };
-                saveLocation({ ...rest, icon: patch.icon ?? 'pin' });
-              } else removeLocation(form.loc.id);
-              setForm(null);
-            }}
-          />
-        )}
-      </View>
+      <>
+        {form.kind !== 'share' && previewMap}
+        <View style={[styles.wrap, { top }]}>
+          {form.kind === 'share' ? (
+            <LocationShare loc={form.loc} onCancel={() => setForm(null)} />
+          ) : (
+            <LocationForm
+              form={form}
+              onCancel={() => setForm(null)}
+              onDone={(patch) => {
+                if (form.kind === 'edit') updateLocation(form.loc.id, patch);
+                else if (form.kind === 'pick') pickLocation(form.loc, form.loc.label, form.loc.address, patch);
+                else if (form.kind === 'save') {
+                  const { id: _id, ...rest } = { ...form.loc, ...patch };
+                  saveLocation({ ...rest, icon: patch.icon ?? 'pin' });
+                } else removeLocation(form.loc.id);
+                if (preview) finish();
+                else setForm(null);
+              }}
+            />
+          )}
+        </View>
+      </>
+    );
+  }
+
+  if (preview) {
+    return (
+      <>
+        {previewMap}
+        <View style={[styles.wrap, { top }]}>
+          <View style={styles.searchRow}>
+            <Pressable onPress={() => setPreview(null)} hitSlop={10} accessibilityLabel="Back">
+              <BackIcon size={20} />
+            </Pressable>
+            <T numberOfLines={1} style={styles.previewTitle}>
+              {preview.name}
+            </T>
+            <Pressable
+              onPress={() => setForm({ kind: mode === 'search' ? 'pick' : 'save', loc: placeToLocation(preview) })}
+              hitSlop={10}
+              accessibilityLabel="Use this location"
+            >
+              <CheckIcon size={22} />
+            </Pressable>
+          </View>
+        </View>
+      </>
     );
   }
 
@@ -107,6 +195,8 @@ export function LocationInterface({ top }: { top: number }) {
             value={query}
             onChangeText={setQuery}
             placeholder={mode === 'search' ? 'Search here' : 'Add a location'}
+            returnKeyType="search"
+            autoCorrect={false}
             placeholderTextColor={colors.muted}
             style={styles.input}
           />
@@ -118,14 +208,27 @@ export function LocationInterface({ top }: { top: number }) {
           style={styles.list}
           keyboardShouldPersistTaps="handled"
           data={results}
-          keyExtractor={(p) => p.name + p.address}
+          keyExtractor={(p, i) => `${i}:${p.name}:${p.address}`}
           renderItem={({ item }) => (
             <Pressable onPress={() => choose(item)} style={styles.row}>
-              <T style={styles.rowTitle}>{item.name}</T>
-              <T style={styles.rowSub}>{item.address}</T>
+              <T numberOfLines={1} style={styles.rowTitle}>
+                {item.name}
+              </T>
+              <T numberOfLines={1} style={styles.rowSub}>
+                {placeSubtitle(item)}
+              </T>
             </Pressable>
           )}
-          ListHeaderComponent={!query ? <T style={styles.listHeader}>{mode === 'search' ? 'Suggested' : 'Pick a place to save'}</T> : undefined}
+          ListHeaderComponent={listHeader ? <T style={styles.listHeader}>{listHeader}</T> : undefined}
+          ListFooterComponent={
+            looking ? (
+              <ActivityIndicator color={colors.white} style={{ margin: 12 }} />
+            ) : offline ? (
+              <T style={styles.listHeader}>Can't search the whole world right now. Showing GET's places.</T>
+            ) : query.trim().length >= 2 && !results.length ? (
+              <T style={styles.listHeader}>No places found</T>
+            ) : undefined
+          }
         />
       </View>
     );
@@ -481,11 +584,13 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 18, fontFamily: fonts.sans, color: colors.ink, height: 40 },
   clear: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.black, alignItems: 'center', justifyContent: 'center' },
-  list: { maxHeight: 420, marginTop: 6, backgroundColor: colors.white, borderRadius: 10, borderWidth: 1, borderColor: colors.black },
-  listHeader: { fontSize: 12, color: colors.muted, paddingHorizontal: 12, paddingTop: 8 },
-  row: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.hairline },
-  rowTitle: { fontSize: 15, fontWeight: '600' },
-  rowSub: { fontSize: 12, color: colors.muted },
+  // LI 11 / LI 16: the results are a dark list under the search bar
+  list: { maxHeight: 460, marginTop: 6, backgroundColor: colors.black, borderRadius: 10, borderWidth: 1, borderColor: colors.black },
+  listHeader: { fontSize: 12, color: colors.hairline, paddingHorizontal: 12, paddingVertical: 8 },
+  row: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#333' },
+  rowTitle: { fontSize: 15, fontWeight: '600', color: colors.white },
+  rowSub: { fontSize: 12, color: colors.hairline },
+  previewTitle: { flex: 1, fontSize: 18, fontWeight: '600' },
   menu: { position: 'absolute', top: 66, width: MENU_W, backgroundColor: colors.white, borderRadius: 8, borderWidth: 1, borderColor: colors.black, overflow: 'hidden' },
   menuHead: { backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.black },
   menuAddress: { fontSize: 12, color: colors.white },

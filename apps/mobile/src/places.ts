@@ -58,3 +58,48 @@ export function searchPlaces(q: string, limit = 10): Place[] {
   if (!needle) return CITIES.slice(0, limit);
   return all.filter((p) => fold(p.name).includes(needle) || fold(p.address).includes(needle)).slice(0, limit);
 }
+
+type PhotonFeature = {
+  geometry: { coordinates: [number, number] };
+  properties: {
+    name?: string;
+    housenumber?: string;
+    street?: string;
+    city?: string;
+    district?: string;
+    state?: string;
+    postcode?: string;
+    country?: string;
+  };
+};
+
+/**
+ * Worldwide search as you type: Photon (komoot), an open geocoder over
+ * OpenStreetMap that needs no key. Results near `near` rank first. Addresses
+ * end with the country, like every address in the app.
+ */
+export async function geocode(q: string, near?: LatLng, signal?: AbortSignal): Promise<Place[]> {
+  const params = new URLSearchParams({ q, limit: '10', lang: 'en' });
+  if (near) {
+    params.set('lat', near.lat.toFixed(4));
+    params.set('lon', near.lng.toFixed(4));
+  }
+  const res = await fetch(`https://photon.komoot.io/api/?${params}`, { signal });
+  if (!res.ok) throw new Error(`geocoder ${res.status}`);
+  const { features } = (await res.json()) as { features: PhotonFeature[] };
+  const seen = new Set<string>();
+  return features.flatMap(({ geometry, properties: p }) => {
+    const street = [p.housenumber, p.street].filter(Boolean).join(' ');
+    const name = p.name || street || p.city;
+    if (!name) return [];
+    const region = [p.state, p.postcode].filter(Boolean).join(' ');
+    const address = [street, p.city ?? p.district, region, p.country].filter(Boolean).join(', ');
+    const key = name + address;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ name, address: address || name, lat: geometry.coordinates[1], lng: geometry.coordinates[0] }];
+  });
+}
+
+/** the list's second line: the address without the part already in the name */
+export const placeSubtitle = (p: Place) => (p.address.startsWith(`${p.name}, `) ? p.address.slice(p.name.length + 2) : p.address);
