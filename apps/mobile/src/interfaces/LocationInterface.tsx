@@ -392,7 +392,8 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
  */
 function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => void }) {
   const shared = { ...loc, icon: 'pin' as const };
-  const lines = [...addressLines(loc.address), loc.buildingType, loc.details].filter((l): l is string => !!l);
+  const address = addressLines(loc.address);
+  const lines = [...address, loc.buildingType, loc.details].filter((l): l is string => !!l);
   const mapView = useRef({ point: { lat: loc.lat, lng: loc.lng }, key: 1, streets: true }).current;
   useEffect(() => {
     const link = `https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}`;
@@ -403,10 +404,10 @@ function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => 
   }, []);
 
   return (
-    <Pressable onPress={onCancel} style={[styles.shareCard, { height: Math.max(SHARE_MAP_H, 20 + lines.length * 17) }]} accessibilityLabel="Sharing this location">
+    <Pressable onPress={onCancel} style={[styles.shareCard, { height: Math.max(SHARE_MAP_H, 26 + lines.length * 17) }]} accessibilityLabel="Sharing this location">
       <View style={styles.shareAddress}>
         {lines.map((line, i) => (
-          <T key={i} style={[styles.shareAddressLine, i >= addressLines(loc.address).length && styles.shareExtra]}>
+          <T key={i} style={[styles.shareAddressLine, i >= address.length && styles.shareExtra, i === address.length && { marginTop: 6 }]}>
             {line}
           </T>
         ))}
