@@ -250,7 +250,10 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
 
   if (preview && spot) {
     const parts = spot.parts ?? partsOf(spot);
-    const ok = missingParts(parts, spot.kind).length === 0 && (!isArea || !!spot.area);
+    const complete = missingParts(parts, spot.kind).length === 0;
+    const ok = complete && (!isArea || !!spot.area);
+    // the address panel can't be left (Done or back) until its required boxes are filled
+    const locked = editAddress && !complete;
     const confirm = () => {
       if (editing) {
         // Edit: what changed here rides along to the details panel
@@ -287,8 +290,11 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
                 setSpot(null);
                 if (editing) finish();
               }}
+              disabled={locked}
               hitSlop={10}
+              style={locked && { opacity: 0.35 }}
               accessibilityLabel="Back"
+              accessibilityState={{ disabled: locked }}
             >
               <BackIcon size={20} />
             </Pressable>
@@ -309,7 +315,14 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
           {editAddress ? (
             <View style={[styles.form, styles.previewPanel]}>
               <View style={styles.previewPanelHead}>
-                <Pressable onPress={() => setEditAddress(false)} hitSlop={8} style={[styles.headBtn, styles.doneBtn]} accessibilityLabel="Done editing address">
+                <Pressable
+                  onPress={() => setEditAddress(false)}
+                  disabled={!complete}
+                  hitSlop={8}
+                  style={[styles.headBtn, styles.doneBtn, !complete && styles.doneOff]}
+                  accessibilityLabel="Done editing address"
+                  accessibilityState={{ disabled: !complete }}
+                >
                   <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>Done</T>
                 </Pressable>
               </View>
