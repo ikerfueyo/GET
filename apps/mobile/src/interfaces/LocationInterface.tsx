@@ -136,6 +136,8 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
   // where the place ends up: its pin can be dragged (or an area's outline reshaped) and its address corrected before ✓
   const [spot, setSpot] = useState<Spot | null>(null);
   const [editAddress, setEditAddress] = useState(false);
+  // the place as it was when the address panel opened, for its Cancel
+  const beforeEdit = useRef<Spot | null>(null);
   // a saved place opened from its Edit option comes to this same screen first
   const [editing, setEditing] = useState<SavedLocation | null>(null);
   const [view, setView] = useState<{ point: LatLng; key: number; zoom?: number }>({ point: { lat: 0, lng: 0 }, key: 0 });
@@ -252,8 +254,6 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
     const parts = spot.parts ?? partsOf(spot);
     const complete = missingParts(parts, spot.kind).length === 0;
     const ok = complete && (!isArea || !!spot.area);
-    // the address panel can't be left (Done or back) until its required boxes are filled
-    const locked = editAddress && !complete;
     const confirm = () => {
       if (editing) {
         // Edit: what changed here rides along to the details panel
@@ -290,11 +290,8 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
                 setSpot(null);
                 if (editing) finish();
               }}
-              disabled={locked}
               hitSlop={10}
-              style={locked && { opacity: 0.35 }}
               accessibilityLabel="Back"
-              accessibilityState={{ disabled: locked }}
             >
               <BackIcon size={20} />
             </Pressable>
@@ -314,16 +311,28 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
           </View>
           {editAddress ? (
             <View style={[styles.form, styles.previewPanel]}>
+              {/* Cancel puts the address back; Save stays grey until the required boxes are filled */}
               <View style={styles.previewPanelHead}>
+                <Pressable
+                  onPress={() => {
+                    if (beforeEdit.current) setSpot(beforeEdit.current);
+                    setEditAddress(false);
+                  }}
+                  hitSlop={8}
+                  style={styles.headBtn}
+                  accessibilityLabel="Cancel editing address"
+                >
+                  <T style={styles.headText}>Cancel</T>
+                </Pressable>
                 <Pressable
                   onPress={() => setEditAddress(false)}
                   disabled={!complete}
                   hitSlop={8}
                   style={[styles.headBtn, styles.doneBtn, !complete && styles.doneOff]}
-                  accessibilityLabel="Done editing address"
+                  accessibilityLabel="Save address"
                   accessibilityState={{ disabled: !complete }}
                 >
-                  <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>Done</T>
+                  <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>Save</T>
                 </Pressable>
               </View>
               <ScrollView style={{ maxHeight: height * 0.62 }} keyboardShouldPersistTaps="handled">
@@ -339,7 +348,12 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
               </ScrollView>
             </View>
           ) : (
-            <Pressable onPress={() => setEditAddress(true)} style={styles.previewAddress} accessibilityLabel={`Address: ${spot.address}. Edit`}>
+            <Pressable
+              onPress={() => {
+                beforeEdit.current = spot;
+                setEditAddress(true);
+              }}
+              style={styles.previewAddress} accessibilityLabel={`Address: ${spot.address}. Edit`}>
               <View style={{ flex: 1 }}>
                 {addressLines(spot.address).map((line, i) => (
                   <T key={i} style={styles.menuAddress}>
@@ -954,7 +968,7 @@ const styles = StyleSheet.create({
   previewAddress: { flexDirection: 'row', alignItems: 'center', marginTop: 6, backgroundColor: colors.black, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   previewEdit: { color: colors.white, fontSize: 14, fontWeight: '700', marginLeft: 10 },
   previewPanel: { marginTop: 6 },
-  previewPanelHead: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 2 },
+  previewPanelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
   dragHint: { alignSelf: 'center', marginTop: 6, backgroundColor: colors.black, color: colors.white, fontSize: 12, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
   addressLine: { fontSize: 15, fontWeight: '600', lineHeight: 20 },
   fieldLabel: { fontSize: 15, fontWeight: '600', marginTop: 10, marginBottom: 4 },
