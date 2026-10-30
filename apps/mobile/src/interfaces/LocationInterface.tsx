@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   headBtn: { minWidth: 64, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6 },
   doneBtn: { backgroundColor: colors.black, alignItems: 'center' },
   headText: { fontSize: 15 },
-  deleteAddress: { alignSelf: 'center', marginTop: 4 },
+  deleteAddress: { alignSelf: 'center', marginTop: 10, marginBottom: 6 },
   deleteText: { fontSize: 13, textAlign: 'center' },
   shareCard: { flexDirection: 'row', height: SHARE_MAP_H, marginTop: 12, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: colors.black },
   shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 10 },
