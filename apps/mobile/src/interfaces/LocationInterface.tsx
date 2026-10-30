@@ -385,8 +385,9 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
 }
 
 /**
- * LI 5: share a location. Its card (address on black beside a capture of its
- * streets) shows while the phone's own share sheet is open, and goes away with it.
+ * LI 5: share a location. A header (Cancel, its icon and name) and its card
+ * (address on black beside a capture of its streets) show while the phone's own
+ * share sheet is open, and go away with it.
  * What is shared is the place, not the user's name for it: the address, building
  * type and details, under the plain Other pin.
  */
@@ -404,18 +405,33 @@ function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => 
   }, []);
 
   return (
-    <Pressable onPress={onCancel} style={[styles.shareCard, { height: Math.max(SHARE_MAP_H, 26 + lines.length * 17) }]} accessibilityLabel="Sharing this location">
-      <View style={styles.shareAddress}>
-        {lines.map((line, i) => (
-          <T key={i} style={[styles.shareAddressLine, i >= address.length && styles.shareExtra, i === address.length && { marginTop: 6 }]}>
-            {line}
+    <View style={styles.form}>
+      {/* only on this screen: which of your places this is */}
+      <View style={styles.formHead}>
+        <Pressable onPress={onCancel} hitSlop={8} style={styles.headBtn} accessibilityLabel="Cancel">
+          <T style={styles.headText}>Cancel</T>
+        </Pressable>
+        <View style={styles.headCenter}>
+          <LocationGlyph icon={loc.icon} selected size={34} />
+          <T numberOfLines={1} style={styles.headLabel}>
+            {loc.label}
           </T>
-        ))}
+        </View>
+        <View style={styles.headBtn} />
       </View>
-      <View style={styles.shareMap} pointerEvents="none">
-        <StreetMap width={SHARE_MAP_W} height={SHARE_MAP_H} active={false} selected={shared} enter={mapView} focus={mapView} mini />
+      <View style={[styles.shareCard, { height: Math.max(SHARE_MAP_H, 26 + lines.length * 17) }]} accessibilityLabel="Location being shared">
+        <View style={styles.shareAddress}>
+          {lines.map((line, i) => (
+            <T key={i} style={[styles.shareAddressLine, i >= address.length && styles.shareExtra, i === address.length && { marginTop: 6 }]}>
+              {line}
+            </T>
+          ))}
+        </View>
+        <View style={styles.shareMap} pointerEvents="none">
+          <StreetMap width={SHARE_MAP_W} height={SHARE_MAP_H} active={false} selected={shared} enter={mapView} focus={mapView} mini />
+        </View>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -479,7 +495,7 @@ const styles = StyleSheet.create({
   headText: { fontSize: 15 },
   deleteAddress: { alignSelf: 'center', marginTop: 4 },
   deleteText: { fontSize: 13, textAlign: 'center' },
-  shareCard: { flexDirection: 'row', height: SHARE_MAP_H, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: colors.black },
+  shareCard: { flexDirection: 'row', height: SHARE_MAP_H, marginTop: 12, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: colors.black },
   shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 10 },
   shareAddressLine: { color: colors.white, fontSize: 13, fontWeight: '600', lineHeight: 17 },
   shareExtra: { fontWeight: '400' }, // building type and details, under the address
