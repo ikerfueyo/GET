@@ -3,8 +3,8 @@
  * Tap selects (the icon's circle turns red, globe flies there), Search finds a
  * place, + adds one to the far right. Pressing a location (long-press, or a
  * tap on the one already selected) opens its options under its icon (LI 2 /
- * LI 8): Edit, Share and Save for Here or a searched place, Edit, Share and
- * Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
+ * LI 8): Share and Save for Here, Edit, Share and Save for a searched place,
+ * Edit, Share and Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
  */
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
@@ -465,15 +465,16 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
               </T>
             ))}
           </View>
-          <MenuItem
-            label="Edit"
-            onPress={() => {
-              close();
-              // Here's address comes from the phone, so it goes straight to its details
-              if (menuLoc.icon === 'here') setForm({ kind: 'edit', loc: menuLoc });
-              else open(locationToPlace(menuLoc), menuLoc);
-            }}
-          />
+          {/* Here follows the phone, so there is nothing to edit: only Share and Save */}
+          {menuLoc.icon !== 'here' && (
+            <MenuItem
+              label="Edit"
+              onPress={() => {
+                close();
+                open(locationToPlace(menuLoc), menuLoc);
+              }}
+            />
+          )}
           <MenuItem
             label="Share"
             onPress={() => {
