@@ -6,36 +6,127 @@
  * changes from the Location Interface. Zooming in past the
  * globe's closest view (or tapping the pin) dives into the street map, HS 2.
  *
- * Drawn with d3-geo's orthographic projection into react-native-svg so it
- * runs in Expo Go and on the web without native 3D. The stars are seen through
- * a perspective camera floating above the point at the centre.
+ * Drawn on the GPU with Skia (bundled in Expo Go): the map is baked into
+ * equirectangular distance fields (scripts/bake-earth.ts) and a small shader
+ * wraps them around the sphere and shades the real night side, so turning the globe only
+ * changes a few numbers per frame. The stars are seen through a perspective
+ * camera floating above the point at the centre.
  */
-import { geoCircle, geoDistance, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
+import {
+  Canvas,
+  Circle,
+  FilterMode,
+  Fill,
+  Group,
+  ImageShader,
+  MipmapMode,
+  Oval,
+  Path,
+  RadialGradient,
+  Shader,
+  Skia,
+  useImage,
+  vec,
+} from '@shopify/react-native-skia';
+import { geoDistance, geoOrthographic } from 'd3-geo';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
-import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
-import { feature, mesh } from 'topojson-client';
-import countries110 from 'world-atlas/countries-110m.json';
+import { PanResponder, PixelRatio, Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import type { LatLng } from '@get/shared';
 import { colors } from '../theme';
 import { MOON_RADIUS, dotRadius, skyAt, starsAt, type Vec } from './sky';
-import surfaces from './surfaces.json';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const topo = countries110 as any;
-const LAND = feature(topo, topo.objects.land) as unknown as GeoPermissibleObjects;
-// Surfaces painted over the green land (surfaces.json). Ice: Natural Earth
-// 1:50m glaciated areas, simplified and clipped to the 110m coastline, plus
-// every 110m landmass that is mostly ice or lies south of 60°S, painted whole,
-// so Antarctica, Greenland, Svalbard and Franz Josef Land are white and the
-// ice fields of the Canadian Arctic, Alaska, Patagonia and the Himalaya show.
-// Desert: Natural Earth 1:50m desert regions (Sahara, Arabia, Gobi, Australia's
-// deserts, Atacama, Kalahari...), clipped the same way.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const surf = surfaces as any;
-const ICE = feature(surf, surf.objects.ice) as unknown as GeoPermissibleObjects;
-const DESERT = feature(surf, surf.objects.desert) as unknown as GeoPermissibleObjects;
-const BORDERS = mesh(topo, topo.objects.countries, (a: unknown, b: unknown) => a !== b) as GeoPermissibleObjects;
+// The map, baked as distance fields (scripts/bake-earth.ts, bake-sdf.py): each
+// texel holds how far it is from the nearest coast, desert edge, ice edge
+// (earth-sdf, one per channel) and country border (earth-borders). The shader
+// cuts the edges where the distance is zero, so they stay sharp at any zoom on
+// any screen. Ice (Natural Earth 1:50m glaciated areas, plus every landmass
+// that is mostly ice or south of 60°S) and deserts come from surfaces.json, the
+// land and borders from world-atlas 110m.
+const SDF_IMAGE = require('../../assets/earth-sdf.png');
+const BORDERS_IMAGE = require('../../assets/earth-borders.png');
+const MAP_W = 4096;
+const MAP_H = 2048;
+
+// Wraps the map around the sphere seen from straight above `P` (north up,
+// east right), darkens the side away from the Sun in two bands like twilight,
+// and softens the rim to one pixel. `px` is a screen pixel in points.
+const EARTH = Skia.RuntimeEffect.Make(`
+uniform shader sdf;
+uniform shader borders;
+uniform float2 center;
+uniform float radius;
+uniform float px;
+uniform float lineWidth;
+uniform float3 P;
+uniform float3 R;
+uniform float3 U;
+uniform float3 sun;
+uniform float3 ocean;
+uniform float3 land;
+uniform float3 desert;
+uniform float3 ice;
+uniform float3 border;
+uniform float3 night;
+
+const float TEXELS_PER_RAD = ${MAP_W / (2 * Math.PI)};
+
+// the colours are sRGB like the rest of the app; phones with wide-gamut screens
+// draw in Display P3, so convert rather than let them read as more vivid
+half3 fromSrgb(float3 c) {
+  float3 lin = mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c));
+  return fromLinearSrgb(half3(lin));
+}
+
+// share of a pixel fp texels wide covered by the inside of an edge d texels away
+float cover(float d, float fp) { return clamp(d / fp + 0.5, 0.0, 1.0); }
+
+half4 main(float2 xy) {
+  float2 q = (xy - center) / radius;
+  float d2 = dot(q, q);
+  if (d2 >= 1.0) return half4(0);
+  float z = sqrt(1.0 - d2);
+  float3 n = q.x * R - q.y * U + z * P;
+  float lat = asin(clamp(n.z, -1.0, 1.0));
+  float lng = atan(n.y, n.x);
+  float2 uv = float2((lng / 6.2831853 + 0.5) * ${MAP_W}.0, (0.5 - lat / 3.1415927) * ${MAP_H}.0);
+
+  // one screen pixel in texels, wider towards the rim and the poles
+  float perPoint = TEXELS_PER_RAD / radius;
+  // (capped well inside the ±8 texels the distances reach: wider, and the
+  // clamped far-away distances would bleed land colour into the sea)
+  float fp = min(perPoint * px / max(z, 0.12) / sqrt(max(cos(lat), 0.12)), 4.0);
+
+  half3 a = sdf.eval(uv).rgb;
+  float3 dist = (float3(a) * 255.0 - 128.0) / 16.0;
+  float3 c = ocean;
+  c = mix(c, land, cover(dist.r, fp));
+  c = mix(c, desert, cover(dist.g, fp));
+  c = mix(c, ice, cover(dist.b, fp));
+
+  // borders lineWidth points wide: the part of this pixel that overlaps the line
+  // (texels are stretched east-west towards the poles, so widen by about that)
+  // up close the signed distance (g), which stays exact between texels
+  half2 b = borders.eval(uv).rg;
+  float bd = float(b.r) * 255.0 / 64.0;
+  if (bd < 2.0) bd = abs(float(b.g) * 255.0 - 128.0) / 32.0;
+  float h = min(0.5 * lineWidth * perPoint / sqrt(max(cos(lat), 0.3)), 2.5);
+  // distances stop at 4 texels: anything that far is no line (near the poles,
+  // zoomed out, the line's half-width in texels could otherwise reach that far
+  // and paint the whole polar cap)
+  float line = bd > 3.9 ? 0.0 : clamp(min(h, bd + fp * 0.5) - max(-h, bd - fp * 0.5), 0.0, fp) / fp;
+  c = mix(c, border, line * cover(dist.r, fp));
+
+  float s = dot(n, sun);
+  if (s < 0.0) c = mix(c, night, 0.2);
+  if (s < -0.1564) c = mix(c, night, 0.2); // 9° past the terminator
+  float edge = clamp((1.0 - sqrt(d2)) * radius / px, 0.0, 1.0);
+  return half4(fromSrgb(c), 1.0) * half(edge);
+}`)!;
+
+const PIN_BOX = 24;
+
+const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 
 const MIN_ZOOM = 0.8;
 const MAX_ZOOM = 12;
@@ -156,31 +247,15 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
 
   const { lambda, phi, zoom } = view.current;
   const r = baseR * zoom;
+  // only used for the pin and for taps: single points, cheap
   const projection = useMemo(
-    () => geoOrthographic().scale(r).translate([cx, cy]).rotate([lambda, phi]).clipAngle(90).precision(0.6),
+    () => geoOrthographic().scale(r).translate([cx, cy]).rotate([lambda, phi]).clipAngle(90),
     [r, cx, cy, lambda, phi],
   );
-  const path = geoPath(projection);
-  const landD = path(LAND) ?? '';
-  const iceD = path(ICE) ?? '';
-  const desertD = path(DESERT) ?? '';
-  const bordersD = path(BORDERS) ?? '';
 
   const center: [number, number] = [-lambda, -phi];
 
-  // night: the hemisphere facing away from the real Sun, darkening in two
-  // bands from the terminator inwards, so the edge reads as twilight
   const sky = useMemo(() => skyAt(now), [now]);
-  const sunLen = Math.hypot(...sky.sun);
-  const antiSun: [number, number] = [
-    (Math.atan2(-sky.sun[1], -sky.sun[0]) * 180) / Math.PI,
-    (Math.asin(-sky.sun[2] / sunLen) * 180) / Math.PI,
-  ];
-  const nightDs = useMemo(
-    () => [90, 81].map((radius) => path(geoCircle().center(antiSun).radius(radius)()) ?? ''),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projection, antiSun[0], antiSun[1]],
-  );
   const pinVisible = geoDistance([selected.lng, selected.lat], center) < Math.PI / 2 - 0.02;
   const pin = pinVisible ? projection([selected.lng, selected.lat]) : null;
 
@@ -354,73 +429,120 @@ export function Globe({ width, height, selected, focus, onDive }: Props) {
       // the dark maria of the near side, which faces the viewer when the Moon is behind the Earth
       const near = clamp(-dot(b.u, P) * 1.6, 0, 1);
       surface = near > 0 && (
-        <G opacity={near}>
+        <Group opacity={near}>
           {MARIA.map(([mx, my, rx, ry], i) => (
-            <Ellipse key={i} cx={mx * b.rad} cy={-my * b.rad} rx={rx * b.rad} ry={ry * b.rad} fill={colors.moonMaria} />
+            <Oval
+              key={i}
+              x={(mx - rx) * b.rad}
+              y={(-my - ry) * b.rad}
+              width={2 * rx * b.rad}
+              height={2 * ry * b.rad}
+              color={colors.moonMaria}
+            />
           ))}
-        </G>
+        </Group>
       );
     } else if (b.key === 'mars') {
       // the polar cap that leans towards the viewer
       const pole = dot(sky.marsPole, P) >= 0 ? sky.marsPole : (sky.marsPole.map((v) => -v) as Vec);
       surface = (
-        <Circle cx={0.66 * b.rad * dot(pole, R)} cy={-0.66 * b.rad * dot(pole, U)} r={0.32 * b.rad} fill={colors.ice} />
+        <Circle cx={0.66 * b.rad * dot(pole, R)} cy={-0.66 * b.rad * dot(pole, U)} r={0.32 * b.rad} color={colors.ice} />
       );
     }
     return (
-      <G key={b.key} transform={`translate(${b.x},${b.y})`}>
-        <Circle r={b.rad} fill={b.fill} />
+      <Group key={b.key} transform={[{ translateX: b.x }, { translateY: b.y }]}>
+        <Circle cx={0} cy={0} r={b.rad} color={b.fill} />
         {surface}
-        <Path d={litPath(b.rad, -b.k)} fill={colors.night} opacity={0.94} transform={`rotate(${b.sunAngle + 180})`} />
-      </G>
+        <Group transform={[{ rotate: rad(b.sunAngle + 180) }]}>
+          <Path path={litPath(b.rad, -b.k)} color={colors.night} opacity={0.94} />
+        </Group>
+      </Group>
     );
   };
 
+  const sdf = useImage(SDF_IMAGE);
+  const borderMap = useImage(BORDERS_IMAGE);
+  const sunDir = normalize(sky.sun);
+  const mapRect = { x: 0, y: 0, width: MAP_W, height: MAP_H };
+  const sampling = { filter: FilterMode.Linear, mipmap: MipmapMode.None };
+
   return (
     <View style={[styles.root, { width, height }]} {...responder.panHandlers} {...(webWheel as object)}>
-      <Svg width={width} height={height} pointerEvents="none">
-        <Defs>
-          <RadialGradient id="shade" cx="42%" cy="38%" r="62%">
-            <Stop offset="0.55" stopColor="#000" stopOpacity="0" />
-            <Stop offset="1" stopColor="#000" stopOpacity="0.45" />
-          </RadialGradient>
-          {/* a thin glow of atmosphere around the limb */}
-          <RadialGradient id="air" cx="50%" cy="50%" r="50%">
-            <Stop offset={1 / 1.035 - 0.01} stopColor={colors.air} stopOpacity="0.55" />
-            <Stop offset="1" stopColor={colors.air} stopOpacity="0" />
-          </RadialGradient>
-        </Defs>
-
+      <Canvas style={{ width, height }} pointerEvents="none">
         {[...starPaths].map(([size, ds]) => (
-          <Path key={size} d={ds.join('')} fill={colors.white} opacity={Math.min(1, 0.35 + size * 0.5)} />
+          <Path key={size} path={ds.join('')} color={colors.white} opacity={Math.min(1, 0.35 + size * 0.5)} />
         ))}
         {bodies.filter((b) => !b.front && !b.eclipsed).map(drawBody)}
 
-        <Circle cx={cx} cy={cy} r={r * 1.035} fill="url(#air)" />
-        <Circle cx={cx} cy={cy} r={r} fill={colors.ocean} />
-        <Path d={landD} fill={colors.land} />
-        <Path d={desertD} fill={colors.desert} />
-        <Path d={iceD} fill={colors.ice} />
-        <Path d={bordersD} fill="none" stroke={colors.landStroke} strokeWidth={0.6} />
-        {nightDs.map((d, i) => (
-          <Path key={i} d={d} fill={colors.night} opacity={0.2} />
-        ))}
-        <Circle cx={cx} cy={cy} r={r} fill="url(#shade)" />
-
-        {pin && (
-          <G>
-            <Ellipse cx={pin[0]} cy={pin[1] + 13} rx={7} ry={2.5} fill="#000" opacity={0.35} />
-            <Circle cx={pin[0]} cy={pin[1]} r={11} fill={colors.red} />
-            <Circle cx={pin[0]} cy={pin[1]} r={4.6} fill={colors.white} />
-          </G>
+        {/* a thin glow of atmosphere around the limb */}
+        <Circle cx={cx} cy={cy} r={r * 1.035}>
+          <RadialGradient
+            c={vec(cx, cy)}
+            r={r * 1.035}
+            colors={[colors.air + '8C', colors.air + '00']}
+            positions={[1 / 1.035 - 0.01, 1]}
+          />
+        </Circle>
+        {sdf && borderMap ? (
+          <Fill>
+            <Shader
+              source={EARTH}
+              uniforms={{
+                center: [cx, cy],
+                radius: r,
+                px: 1 / PixelRatio.get(),
+                // a hairline from afar, a little bolder up close
+                lineWidth: 0.6 * Math.min(zoom, MAX_ZOOM) ** 0.4,
+                P,
+                R,
+                U,
+                sun: sunDir,
+                ocean: hex(colors.ocean),
+                land: hex(colors.land),
+                desert: hex(colors.desert),
+                ice: hex(colors.ice),
+                border: hex(colors.landStroke),
+                night: hex(colors.night),
+              }}
+            >
+              <ImageShader image={sdf} tx="repeat" ty="clamp" fit="fill" rect={mapRect} sampling={sampling} />
+              <ImageShader image={borderMap} tx="repeat" ty="clamp" fit="fill" rect={mapRect} sampling={sampling} />
+            </Shader>
+          </Fill>
+        ) : (
+          <Circle cx={cx} cy={cy} r={r} color={colors.ocean} />
         )}
+        {/* the limb darkens, lit from the upper left */}
+        <Circle cx={cx} cy={cy} r={r}>
+          <RadialGradient
+            c={vec(cx - 0.16 * r, cy - 0.24 * r)}
+            r={1.24 * r}
+            colors={['#00000000', '#00000073']}
+            positions={[0.55, 1]}
+          />
+        </Circle>
+
+        {pin && <Oval x={pin[0] - 7} y={pin[1] + 13 - 2.5} width={14} height={5} color="#000" opacity={0.35} />}
 
         {bodies.filter((b) => b.front).map(drawBody)}
-      </Svg>
+      </Canvas>
+      {/* the pin is a small SVG over the canvas, so it can share its icon drawings with the rest of the app */}
+      {pin && (
+        <Svg
+          width={PIN_BOX}
+          height={PIN_BOX}
+          style={[styles.pin, { left: pin[0] - PIN_BOX / 2, top: pin[1] - PIN_BOX / 2 }]}
+          pointerEvents="none"
+        >
+          <SvgCircle cx={PIN_BOX / 2} cy={PIN_BOX / 2} r={11} fill={colors.red} />
+          <SvgCircle cx={PIN_BOX / 2} cy={PIN_BOX / 2} r={4.6} fill={colors.white} />
+        </Svg>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { backgroundColor: colors.black, overflow: 'hidden' },
+  pin: { position: 'absolute' },
 });

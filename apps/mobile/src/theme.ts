@@ -14,11 +14,14 @@ export const colors = {
   green: '#007514', // open Orders interface (cart icon in Orders Interface 2.png)
   blue: '#008EFA', // open Account interface (Expo Go's settings button blue)
   shadeOff: '#ECECEC', // S/P/D mode not offered
-  ocean: '#2D5BC4',
-  land: '#2E7D4F',
-  landStroke: '#256A42',
+  // the globe and drawn map: the vivid look the globe first had on wide-gamut
+  // phone screens (the old #2D5BC4 / #2E7D4F / #256A42 / #C8B27A read as
+  // Display P3), written as the sRGB colours that look the same everywhere
+  ocean: '#175CCB',
+  land: '#007F4A',
+  landStroke: '#006C3E',
   ice: '#FFFFFF', // snow and ice on the globe
-  desert: '#C8B27A',
+  desert: '#CDB172',
   air: '#7FB2FF', // atmosphere glow at the limb
   moon: '#D8D6D0',
   moonMaria: '#A9A7A1',
