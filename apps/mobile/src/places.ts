@@ -2,12 +2,16 @@
  * A small offline gazetteer for the Location Search Interface (LI 11).
  * Swap for a geocoding API (Mapbox, Google Places) once there is a key.
  */
-import { STORES, storeAddress, type LatLng } from '@get/shared';
+import { STORES, formatAddress, parseAddress, storeAddress, type AddressParts, type LatLng } from '@get/shared';
 
 export interface Place extends LatLng {
   name: string;
   address: string;
+  /** the address in its parts, when the geocoder gave them */
+  parts?: AddressParts;
 }
+
+export const partsOf = (p: Pick<Place, 'address' | 'parts'>) => p.parts ?? parseAddress(p.address);
 
 const CITIES: Place[] = [
   ['New Haven', 'CT, United States', 41.3083, -72.9279],
@@ -85,11 +89,33 @@ type PhotonFeature = {
     street?: string;
     city?: string;
     district?: string;
+    locality?: string;
     state?: string;
     postcode?: string;
     country?: string;
   };
 };
+
+/**
+ * Worldwide search as you type: Photon (komoot), an open geocoder over
+ * OpenStreetMap that needs no key. Results near `near` rank first. Addresses
+ * end with the country, like every address in the app.
+ */
+function toPlace({ geometry, properties: p }: PhotonFeature): Place | null {
+  const street = [p.housenumber, p.street].filter(Boolean).join(' ');
+  const parts: AddressParts = {
+    street,
+    neighborhood: p.locality ?? p.district ?? '',
+    city: p.city ?? '',
+    region: regionCode(p.state, p.country) ?? '',
+    postcode: p.postcode ?? '',
+    country: p.country ?? '',
+  };
+  const name = p.name || street || p.city;
+  if (!name) return null;
+  const address = formatAddress(parts);
+  return { name, address: address || name, parts, lat: geometry.coordinates[1], lng: geometry.coordinates[0] };
+}
 
 /**
  * Worldwide search as you type: Photon (komoot), an open geocoder over
@@ -106,17 +132,21 @@ export async function geocode(q: string, near?: LatLng, signal?: AbortSignal): P
   if (!res.ok) throw new Error(`geocoder ${res.status}`);
   const { features } = (await res.json()) as { features: PhotonFeature[] };
   const seen = new Set<string>();
-  return features.flatMap(({ geometry, properties: p }) => {
-    const street = [p.housenumber, p.street].filter(Boolean).join(' ');
-    const name = p.name || street || p.city;
-    if (!name) return [];
-    const region = [regionCode(p.state, p.country), p.postcode].filter(Boolean).join(' ');
-    const address = [street, p.city ?? p.district, region, p.country].filter(Boolean).join(', ');
-    const key = name + address;
-    if (seen.has(key)) return [];
-    seen.add(key);
-    return [{ name, address: address || name, lat: geometry.coordinates[1], lng: geometry.coordinates[0] }];
+  return features.flatMap((f) => {
+    const place = toPlace(f);
+    if (!place || seen.has(place.name + place.address)) return [];
+    seen.add(place.name + place.address);
+    return [place];
   });
+}
+
+/** The address at a point, for a pin that was dragged somewhere new. */
+export async function reverseGeocode(p: LatLng, signal?: AbortSignal): Promise<Place | null> {
+  const params = new URLSearchParams({ lat: p.lat.toFixed(6), lon: p.lng.toFixed(6), lang: 'en', limit: '1' });
+  const res = await fetch(`https://photon.komoot.io/reverse?${params}`, { signal });
+  if (!res.ok) throw new Error(`geocoder ${res.status}`);
+  const { features } = (await res.json()) as { features: PhotonFeature[] };
+  return features[0] ? toPlace(features[0]) : null;
 }
 
 /** the list's second line: the address without the part already in the name */

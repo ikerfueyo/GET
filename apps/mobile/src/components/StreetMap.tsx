@@ -68,6 +68,9 @@ type Props = {
   onExit?: (center: LatLng) => void;
   /** a small capture (the Share card): the credits shrink to one line in the corner */
   mini?: boolean;
+  /** with these the pin can be dragged: called while it moves and where it is let go */
+  onPinDrag?: (p: LatLng) => void;
+  onPinDrop?: (p: LatLng) => void;
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -76,7 +79,7 @@ const wrap = (x: number) => x - Math.floor(x);
 const worldPx = (zoom: number) => TILE * 2 ** zoom;
 const roadWidth = (base: number, zoom: number) => Math.max(0.8, base * 2 ** ((zoom - 16) * 0.8));
 
-export function StreetMap({ width, height, active, selected, enter, focus, onExit, mini }: Props) {
+export function StreetMap({ width, height, active, selected, enter, focus, onExit, mini, onPinDrag, onPinDrop }: Props) {
   const start = toWorld(enter.point.lng, enter.point.lat);
   const view = useRef<View2>({ ...start, zoom: MIN_ZOOM });
   /** letting go below this zoom goes back to the globe */
@@ -146,12 +149,28 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   }, [focus.key]);
 
   // ── gestures ──
-  type Mode = 'none' | 'pan' | 'pinch';
-  const g = useRef({ mode: 'none' as Mode, base: view.current, dx0: 0, dy0: 0, d0: 0, wp: { x: 0, y: 0 }, t: 0, moved: false });
+  type Mode = 'none' | 'pan' | 'pinch' | 'pin';
+  const g = useRef({ mode: 'none' as Mode, base: view.current, dx0: 0, dy0: 0, d0: 0, wp: { x: 0, y: 0 }, t: 0, moved: false, pin0: { x: 0, y: 0 } });
   const touchesOf = (e: GestureResponderEvent) => e.nativeEvent.touches ?? [];
 
-  const latest = useRef({ width, height, onExit, selected });
-  latest.current = { width, height, onExit, selected };
+  const latest = useRef({ width, height, onExit, selected, onPinDrag, onPinDrop });
+  latest.current = { width, height, onExit, selected, onPinDrag, onPinDrop };
+
+  /** where the selected location's pin is on screen */
+  const pinOnScreen = () => {
+    const sel = latest.current.selected;
+    const p = toWorld(sel.lng, sel.lat);
+    const W = worldPx(view.current.zoom);
+    const { width: w, height: h } = latest.current;
+    let dx = (p.x - view.current.x) * W;
+    if (dx > W / 2) dx -= W;
+    if (dx < -W / 2) dx += W;
+    return { x: w / 2 + dx, y: h / 2 + (p.y - view.current.y) * W };
+  };
+  const pinAt = (sx: number, sy: number) => {
+    const w = screenToWorld(sx, sy);
+    return fromWorld(wrap(w.x), clamp(w.y, 0, 1));
+  };
 
   const screenToWorld = (sx: number, sy: number, v: View2 = view.current) => {
     const W = worldPx(v.zoom);
@@ -174,11 +193,23 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
+        // inside a scrolling panel the map keeps the finger (dragging the pin or the streets)
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (e) => {
           stopAnim();
           g.current = { ...g.current, mode: 'none', base: { ...view.current }, t: Date.now(), moved: false };
+          // a touch on a draggable pin moves the pin instead of the map
+          const pin = pinOnScreen();
+          if (latest.current.onPinDrag && Math.hypot(e.nativeEvent.locationX - pin.x, e.nativeEvent.locationY - pin.y) < 28) {
+            g.current = { ...g.current, mode: 'pin', pin0: pin };
+          }
         },
         onPanResponderMove: (e, gs) => {
+          if (g.current.mode === 'pin') {
+            g.current.moved = true;
+            latest.current.onPinDrag?.(pinAt(g.current.pin0.x + gs.dx, g.current.pin0.y + gs.dy));
+            return;
+          }
           const ts = touchesOf(e);
           if (ts.length >= 2) {
             const mx = (ts[0].pageX + ts[1].pageX) / 2;
@@ -206,6 +237,10 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           redraw();
         },
         onPanResponderRelease: (e, gs) => {
+          if (g.current.mode === 'pin') {
+            if (g.current.moved) latest.current.onPinDrop?.(pinAt(g.current.pin0.x + gs.dx, g.current.pin0.y + gs.dy));
+            return;
+          }
           if (!g.current.moved) {
             // a tap: on the red pin it flies down to the streets; anywhere else it does
             // nothing, since the selected location only changes from the Location Interface
