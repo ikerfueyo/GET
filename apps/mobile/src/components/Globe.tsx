@@ -94,7 +94,9 @@ half4 main(float2 xy) {
 
   // one screen pixel in texels, wider towards the rim and the poles
   float perPoint = TEXELS_PER_RAD / radius;
-  float fp = perPoint * px / max(z, 0.12) / sqrt(max(cos(lat), 0.12));
+  // (capped well inside the ±8 texels the distances reach: wider, and the
+  // clamped far-away distances would bleed land colour into the sea)
+  float fp = min(perPoint * px / max(z, 0.12) / sqrt(max(cos(lat), 0.12)), 4.0);
 
   half3 a = sdf.eval(uv).rgb;
   float3 dist = (float3(a) * 255.0 - 128.0) / 16.0;
@@ -109,8 +111,11 @@ half4 main(float2 xy) {
   half2 b = borders.eval(uv).rg;
   float bd = float(b.r) * 255.0 / 64.0;
   if (bd < 2.0) bd = abs(float(b.g) * 255.0 - 128.0) / 32.0;
-  float h = 0.5 * lineWidth * perPoint / sqrt(max(cos(lat), 0.12));
-  float line = clamp(min(h, bd + fp * 0.5) - max(-h, bd - fp * 0.5), 0.0, fp) / fp;
+  float h = min(0.5 * lineWidth * perPoint / sqrt(max(cos(lat), 0.3)), 2.5);
+  // distances stop at 4 texels: anything that far is no line (near the poles,
+  // zoomed out, the line's half-width in texels could otherwise reach that far
+  // and paint the whole polar cap)
+  float line = bd > 3.9 ? 0.0 : clamp(min(h, bd + fp * 0.5) - max(-h, bd - fp * 0.5), 0.0, fp) / fp;
   c = mix(c, border, line * cover(dist.r, fp));
 
   float s = dot(n, sun);
