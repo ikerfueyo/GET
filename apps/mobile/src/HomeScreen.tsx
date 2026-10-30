@@ -87,6 +87,7 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
             enter={enter}
             focus={{ point: selected, key: focusKey }}
             onExit={surface}
+            area={selected.area}
           />
         </Animated.View>
         {street && <StatusBar style="dark" />}

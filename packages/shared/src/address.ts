@@ -26,10 +26,9 @@ export function addressLines(address: string): string[] {
 }
 
 /**
- * An address in its parts, for editing. A full address has a street, city,
- * state/province, postcode and country; a broader place (a neighborhood,
- * district, city, state or country) leaves the street empty and needs only
- * its country.
+ * An address in its parts, for editing. An exact place (a house or a street)
+ * has all six; an area (a neighborhood or district, city, state/province or
+ * country) has no street or postcode.
  */
 export interface AddressParts {
   street: string;
@@ -40,13 +39,25 @@ export interface AddressParts {
   country: string;
 }
 
+/** a single spot on the map, or an area with an outline */
+export type PlaceKind = 'point' | 'area';
+
 export const EMPTY_ADDRESS: AddressParts = { street: '', neighborhood: '', city: '', region: '', postcode: '', country: '' };
 
-/** the parts a full (street) address must have */
-export function missingParts(a: AddressParts): (keyof AddressParts)[] {
-  const t = (k: keyof AddressParts) => !a[k].trim();
-  const required: (keyof AddressParts)[] = a.street.trim() ? ['city', 'region', 'postcode', 'country'] : ['country'];
-  return required.filter(t);
+export const POINT_PARTS: (keyof AddressParts)[] = ['street', 'neighborhood', 'city', 'region', 'postcode', 'country'];
+/** an area's parts, narrowest first */
+export const AREA_PARTS: (keyof AddressParts)[] = ['neighborhood', 'city', 'region', 'country'];
+
+/**
+ * The boxes still to fill. An exact place needs every one; an area needs every
+ * box broader than its first filled one (a city needs its state/province and
+ * country, but no neighborhood), and at least a country.
+ */
+export function missingParts(a: AddressParts, kind: PlaceKind = 'point'): (keyof AddressParts)[] {
+  const empty = (k: keyof AddressParts) => !a[k].trim();
+  if (kind === 'point') return POINT_PARTS.filter(empty);
+  const first = AREA_PARTS.findIndex((k) => !empty(k));
+  return (first < 0 ? ['country' as const] : AREA_PARTS.slice(first + 1)).filter(empty);
 }
 
 export function formatAddress(a: AddressParts): string {
