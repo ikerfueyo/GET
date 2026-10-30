@@ -406,19 +406,20 @@ function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => 
 
   return (
     <View style={[styles.form, styles.shareForm]}>
-      {/* a slim strip, only on this screen: which of your places this is, and a way out */}
-      <View style={styles.shareHead}>
-        <Pressable onPress={onCancel} hitSlop={8} style={styles.shareCancel} accessibilityLabel="Cancel">
-          <T style={styles.shareCancelText}>Cancel</T>
+      {/* only on this screen: which of your places this is, and a way out */}
+      <View style={[styles.formHead, styles.shareHead]}>
+        <Pressable onPress={onCancel} hitSlop={8} style={styles.headBtn} accessibilityLabel="Cancel">
+          <T style={styles.headText}>Cancel</T>
         </Pressable>
-        <View style={styles.shareTitle}>
-          <LocationGlyph icon={loc.icon} selected size={22} />
-          <T numberOfLines={1} style={styles.shareTitleText}>
+        <View style={styles.headCenter}>
+          <LocationGlyph icon={loc.icon} selected size={34} />
+          <T numberOfLines={1} style={styles.headLabel}>
             {loc.label}
           </T>
         </View>
-        <View style={styles.shareCancel} />
+        <View style={styles.headBtn} />
       </View>
+      {/* the card fills the rest of the panel, edge to edge */}
       <View style={[styles.shareCard, { height: Math.max(SHARE_MAP_H, 26 + lines.length * 17) }]} accessibilityLabel="Location being shared">
         <View style={styles.shareAddress}>
           {lines.map((line, i) => (
@@ -435,8 +436,8 @@ function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => 
   );
 }
 
-const SHARE_MAP_W = 128;
-const SHARE_MAP_H = 104;
+const SHARE_MAP_W = 150;
+const SHARE_MAP_H = 120;
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: 10, right: 10, zIndex: 20 },
@@ -495,14 +496,10 @@ const styles = StyleSheet.create({
   headText: { fontSize: 15 },
   deleteAddress: { alignSelf: 'center', marginTop: 10, marginBottom: 6 },
   deleteText: { fontSize: 13, textAlign: 'center' },
-  shareForm: { padding: 6 },
-  shareHead: { flexDirection: 'row', alignItems: 'center', height: 30, paddingHorizontal: 4 },
-  shareCancel: { width: 60 },
-  shareCancelText: { fontSize: 14 },
-  shareTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  shareTitleText: { fontSize: 14, fontWeight: '700' },
-  shareCard: { flexDirection: 'row', height: SHARE_MAP_H, marginTop: 4, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: colors.black },
-  shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 10 },
+  shareForm: { padding: 0, overflow: 'hidden' },
+  shareHead: { padding: 10 },
+  shareCard: { flexDirection: 'row', height: SHARE_MAP_H, borderTopWidth: 1, borderTopColor: colors.black },
+  shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 14 },
   shareAddressLine: { color: colors.white, fontSize: 13, fontWeight: '600', lineHeight: 17 },
   shareExtra: { fontWeight: '400' }, // building type and details, under the address
   shareMap: { width: SHARE_MAP_W, alignSelf: 'stretch', justifyContent: 'center', backgroundColor: colors.white },
