@@ -549,7 +549,8 @@ const ADDRESS_FIELDS: { key: keyof AddressParts; label: string }[] = [
 ];
 
 /**
- * The address in its parts. An exact place needs every box. An area (a
+ * The address in its parts. An exact place needs every box but the
+ * neighborhood or district. An area (a
  * neighborhood or district, city, state/province or country) has no street or
  * ZIP code, and needs every box broader than its first filled one. Missing
  * boxes are outlined in red.
@@ -608,7 +609,7 @@ function AddressEditor({
         box(region)
       )}
       {box(country)}
-      {missing.length > 0 && <T style={styles.missingNote}>{point ? 'An exact place needs every box.' : 'An area needs every box below the first one filled.'}</T>}
+      {missing.length > 0 && <T style={styles.missingNote}>{point ? 'An exact place needs every box but the neighborhood or district.' : 'An area needs every box below the first one filled.'}</T>}
     </View>
   );
 }

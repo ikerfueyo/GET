@@ -14,9 +14,8 @@ describe('address parts', () => {
     expect(p).toMatchObject({ street: '', neighborhood: 'Polanco', city: 'Ciudad de México', country: 'Mexico' });
   });
 
-  it('needs every box for an exact place', () => {
+  it('needs every box but the neighborhood for an exact place', () => {
     expect(missingParts({ street: '1 Main St', neighborhood: '', city: '', region: 'CT', postcode: '', country: 'United States' })).toEqual([
-      'neighborhood',
       'city',
       'postcode',
     ]);
