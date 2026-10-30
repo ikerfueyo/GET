@@ -71,6 +71,13 @@ uniform float3 night;
 
 const float TEXELS_PER_RAD = ${MAP_W / (2 * Math.PI)};
 
+// the colours are sRGB like the rest of the app; phones with wide-gamut screens
+// draw in Display P3, so convert rather than let them read as more vivid
+half3 fromSrgb(float3 c) {
+  float3 lin = mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c));
+  return fromLinearSrgb(half3(lin));
+}
+
 // share of a pixel fp texels wide covered by the inside of an edge d texels away
 float cover(float d, float fp) { return clamp(d / fp + 0.5, 0.0, 1.0); }
 
@@ -109,7 +116,7 @@ half4 main(float2 xy) {
   if (s < 0.0) c = mix(c, night, 0.2);
   if (s < -0.1564) c = mix(c, night, 0.2); // 9° past the terminator
   float edge = clamp((1.0 - sqrt(d2)) * radius / px, 0.0, 1.0);
-  return half4(half3(c), 1.0) * half(edge);
+  return half4(fromSrgb(c), 1.0) * half(edge);
 }`)!;
 
 const PIN_BOX = 24;
