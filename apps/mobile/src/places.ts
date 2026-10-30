@@ -181,13 +181,25 @@ export async function geocode(q: string, near?: LatLng, signal?: AbortSignal): P
   });
 }
 
-/** The address at a point, for a pin that was dragged somewhere new. */
+/**
+ * The address at a point, for a pin that was dragged somewhere new. A pin is
+ * always an exact place, so where it lands on no address (a park, a lake, open
+ * country) it takes the nearest one with a street; with none near, null.
+ */
 export async function reverseGeocode(p: LatLng, signal?: AbortSignal): Promise<Place | null> {
-  const params = new URLSearchParams({ lat: p.lat.toFixed(6), lon: p.lng.toFixed(6), lang: 'en', limit: '1' });
-  const res = await fetch(`https://photon.komoot.io/reverse?${params}`, { signal });
-  if (!res.ok) throw new Error(`geocoder ${res.status}`);
-  const { features } = (await res.json()) as { features: PhotonFeature[] };
-  return features[0] ? toPlace(features[0]) : null;
+  for (const radius of ['1', '15']) {
+    const params = new URLSearchParams({ lat: p.lat.toFixed(6), lon: p.lng.toFixed(6), lang: 'en', limit: '10', radius });
+    params.append('layer', 'house');
+    params.append('layer', 'street');
+    const res = await fetch(`https://photon.komoot.io/reverse?${params}`, { signal });
+    if (!res.ok) throw new Error(`geocoder ${res.status}`);
+    const { features } = (await res.json()) as { features: PhotonFeature[] };
+    // nearest first; a house beats a bare street
+    const places = features.map(toPlace).filter((x): x is Place => !!x && x.kind === 'point' && !!x.parts?.street);
+    const best = places.find((x) => /^\S*\d/.test(x.parts!.street)) ?? places[0];
+    if (best) return best;
+  }
+  return null;
 }
 
 /** the list's second line: the address without the part already in the name */
