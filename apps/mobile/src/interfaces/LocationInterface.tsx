@@ -387,28 +387,32 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
 /**
  * LI 5: share a location. Its card (address on black beside a capture of its
  * streets) shows while the phone's own share sheet is open, and goes away with it.
+ * What is shared is the place, not the user's name for it: the address, building
+ * type and details, under the plain Other pin.
  */
 function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => void }) {
+  const shared = { ...loc, icon: 'pin' as const };
+  const lines = [...addressLines(loc.address), loc.buildingType, loc.details].filter((l): l is string => !!l);
   const mapView = useRef({ point: { lat: loc.lat, lng: loc.lng }, key: 1, streets: true }).current;
   useEffect(() => {
     const link = `https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}`;
-    Share.share({ title: `${loc.label} from GET`, message: `${loc.label}\n${loc.address}\n${link}` })
+    Share.share({ title: 'Location from GET', message: [...lines, link].join('\n') })
       .catch(() => {})
       .finally(onCancel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <Pressable onPress={onCancel} style={styles.shareCard} accessibilityLabel={`Sharing ${loc.label}`}>
+    <Pressable onPress={onCancel} style={[styles.shareCard, { height: Math.max(SHARE_MAP_H, 20 + lines.length * 17) }]} accessibilityLabel="Sharing this location">
       <View style={styles.shareAddress}>
-        {addressLines(loc.address).map((line, i) => (
-          <T key={i} style={styles.shareAddressLine}>
+        {lines.map((line, i) => (
+          <T key={i} style={[styles.shareAddressLine, i >= addressLines(loc.address).length && styles.shareExtra]}>
             {line}
           </T>
         ))}
       </View>
       <View style={styles.shareMap} pointerEvents="none">
-        <StreetMap width={SHARE_MAP_W} height={SHARE_MAP_H} active={false} selected={loc} enter={mapView} focus={mapView} mini />
+        <StreetMap width={SHARE_MAP_W} height={SHARE_MAP_H} active={false} selected={shared} enter={mapView} focus={mapView} mini />
       </View>
     </Pressable>
   );
@@ -477,7 +481,8 @@ const styles = StyleSheet.create({
   shareCard: { flexDirection: 'row', height: SHARE_MAP_H, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: colors.black },
   shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 10 },
   shareAddressLine: { color: colors.white, fontSize: 13, fontWeight: '600', lineHeight: 17 },
-  shareMap: { width: SHARE_MAP_W, height: SHARE_MAP_H, backgroundColor: colors.white },
+  shareExtra: { fontWeight: '400' }, // building type and details, under the address
+  shareMap: { width: SHARE_MAP_W, alignSelf: 'stretch', justifyContent: 'center', backgroundColor: colors.white },
   headCenter: { alignItems: 'center', flex: 1, marginHorizontal: 6 },
   headLabel: { fontSize: 12, fontWeight: '700', marginTop: 2 },
   addressBlock: { marginTop: 22, marginBottom: 10 },
