@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Skia for web: copied from canvaskit-wasm by `npm run setup-web`
+public/canvaskit.wasm
+
+# intermediate masks from scripts/bake-earth.ts
+scripts/.masks/
