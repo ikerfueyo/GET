@@ -10,16 +10,16 @@ export interface Place extends LatLng {
 }
 
 const CITIES: Place[] = [
-  ['New Haven', 'Connecticut, United States', 41.3083, -72.9279],
-  ['New York', 'New York, United States', 40.7128, -74.006],
-  ['Boston', 'Massachusetts, United States', 42.3601, -71.0589],
-  ['San Francisco', 'California, United States', 37.7749, -122.4194],
-  ['Los Angeles', 'California, United States', 34.0522, -118.2437],
-  ['Miami', 'Florida, United States', 25.7617, -80.1918],
+  ['New Haven', 'CT, United States', 41.3083, -72.9279],
+  ['New York', 'NY, United States', 40.7128, -74.006],
+  ['Boston', 'MA, United States', 42.3601, -71.0589],
+  ['San Francisco', 'CA, United States', 37.7749, -122.4194],
+  ['Los Angeles', 'CA, United States', 34.0522, -118.2437],
+  ['Miami', 'FL, United States', 25.7617, -80.1918],
   ['Ciudad de México', 'Mexico', 19.4326, -99.1332],
   ['Monterrey', 'Nuevo León, Mexico', 25.6866, -100.3161],
   ['Guadalajara', 'Jalisco, Mexico', 20.6597, -103.3496],
-  ['Toronto', 'Ontario, Canada', 43.6532, -79.3832],
+  ['Toronto', 'ON, Canada', 43.6532, -79.3832],
   ['Bogotá', 'Colombia', 4.711, -74.0721],
   ['São Paulo', 'Brazil', -23.5505, -46.6333],
   ['Buenos Aires', 'Argentina', -34.6037, -58.3816],
@@ -59,6 +59,24 @@ export function searchPlaces(q: string, limit = 10): Place[] {
   return all.filter((p) => fold(p.name).includes(needle) || fold(p.address).includes(needle)).slice(0, limit);
 }
 
+/** US states and Canadian provinces go by their postal initials in addresses (CT, not Connecticut) */
+const REGION_CODES: Record<string, string> = {
+  Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA', Colorado: 'CO', Connecticut: 'CT',
+  Delaware: 'DE', 'District of Columbia': 'DC', Florida: 'FL', Georgia: 'GA', Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL',
+  Indiana: 'IN', Iowa: 'IA', Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD',
+  Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO', Montana: 'MT',
+  Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+  'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH', Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA',
+  'Rhode Island': 'RI', 'South Carolina': 'SC', 'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT',
+  Vermont: 'VT', Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI', Wyoming: 'WY',
+  'Puerto Rico': 'PR',
+  Alberta: 'AB', 'British Columbia': 'BC', Manitoba: 'MB', 'New Brunswick': 'NB', 'Newfoundland and Labrador': 'NL',
+  'Nova Scotia': 'NS', Ontario: 'ON', 'Prince Edward Island': 'PE', Quebec: 'QC', Saskatchewan: 'SK',
+  'Northwest Territories': 'NT', Nunavut: 'NU', Yukon: 'YT',
+};
+export const regionCode = (state: string | undefined, country: string | undefined) =>
+  state && (country === 'United States' || country === 'Canada') ? (REGION_CODES[state] ?? state) : state;
+
 type PhotonFeature = {
   geometry: { coordinates: [number, number] };
   properties: {
@@ -92,7 +110,7 @@ export async function geocode(q: string, near?: LatLng, signal?: AbortSignal): P
     const street = [p.housenumber, p.street].filter(Boolean).join(' ');
     const name = p.name || street || p.city;
     if (!name) return [];
-    const region = [p.state, p.postcode].filter(Boolean).join(' ');
+    const region = [regionCode(p.state, p.country), p.postcode].filter(Boolean).join(' ');
     const address = [street, p.city ?? p.district, region, p.country].filter(Boolean).join(', ');
     const key = name + address;
     if (seen.has(key)) return [];

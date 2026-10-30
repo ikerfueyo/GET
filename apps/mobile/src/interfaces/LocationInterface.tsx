@@ -31,6 +31,7 @@ const LABEL_ICONS: { icon: Icon; name: string }[] = [
 const isCurrent = (l: SavedLocation) => l.icon === 'here' || l.id === 'loc_picked';
 
 const ITEM_W = 56; // strip item width incl. margins
+const SEARCH_W = 34;
 const MENU_W = 170;
 
 function LocationGlyph({ icon, selected, size = 34 }: { icon: Icon; selected: boolean; size?: number }) {
@@ -109,9 +110,10 @@ export function LocationInterface({ top }: { top: number }) {
     setQuery('');
   };
 
-  const openMenu = (id: string, index: number) => {
+  /** `index` in the scrolling part, or null for the searched place before the divider */
+  const openMenu = (id: string, index: number | null) => {
     // centred under the icon that was pressed, kept inside the strip
-    const iconCenter = 8 + scrollLeft.current + index * ITEM_W + ITEM_W / 2 - scrollX.current;
+    const iconCenter = index === null ? 8 + SEARCH_W + ITEM_W / 2 : 8 + scrollLeft.current + index * ITEM_W + ITEM_W / 2 - scrollX.current;
     setMenuLeft(Math.max(0, Math.min(iconCenter - MENU_W / 2, stripW - MENU_W)));
     setMenuFor(id);
   };
@@ -187,7 +189,15 @@ export function LocationInterface({ top }: { top: number }) {
     return (
       <View style={[styles.wrap, { top }]}>
         <View style={styles.searchRow}>
-          <Pressable onPress={() => setMode('strip')} hitSlop={10} accessibilityLabel="Back">
+          <Pressable
+            onPress={() => {
+              // leaving Search or Add forgets what was typed
+              setMode('strip');
+              setQuery('');
+            }}
+            hitSlop={10}
+            accessibilityLabel="Back"
+          >
             <BackIcon size={20} />
           </Pressable>
           <TextInput
@@ -235,6 +245,31 @@ export function LocationInterface({ top }: { top: number }) {
   }
 
   const menuLoc = locations.find((l) => l.id === menuFor);
+  // a searched place sits between Search and the divider (LI 15); the rest scroll after it
+  const searched = locations.find((l) => l.id === 'loc_picked');
+  const strip = locations.filter((l) => l.id !== 'loc_picked');
+  const renderItem = (loc: SavedLocation, i: number | null) => {
+    const isSel = loc.id === selected.id;
+    const open = () => openMenu(loc.id, i);
+    return (
+      <Pressable
+        key={loc.id}
+        onPress={() => {
+          if (isSel) return menuFor === loc.id ? close() : open();
+          close();
+          selectLocation(loc.id);
+        }}
+        onLongPress={open}
+        style={styles.item}
+        accessibilityLabel={`${loc.label}${isSel ? ', selected' : ''}`}
+      >
+        <LocationGlyph icon={loc.icon} selected={isSel} />
+        <T numberOfLines={1} style={[styles.label, isSel && { fontWeight: '700' }]}>
+          {loc.label}
+        </T>
+      </Pressable>
+    );
+  };
   const close = () => setMenuFor(null);
 
   return (
@@ -243,6 +278,7 @@ export function LocationInterface({ top }: { top: number }) {
         <Pressable onPress={() => setMode('search')} style={styles.searchBtn} accessibilityLabel="Search locations">
           <SearchIcon size={20} />
         </Pressable>
+        {searched && renderItem(searched, null)}
         <View style={styles.sep} />
         <ScrollView
           horizontal
@@ -255,27 +291,7 @@ export function LocationInterface({ top }: { top: number }) {
           }}
           scrollEventThrottle={32}
         >
-          {locations.map((loc, i) => {
-            const isSel = loc.id === selected.id;
-            return (
-              <Pressable
-                key={loc.id}
-                onPress={() => {
-                  if (isSel) return menuFor === loc.id ? close() : openMenu(loc.id, i);
-                  close();
-                  selectLocation(loc.id);
-                }}
-                onLongPress={() => openMenu(loc.id, i)}
-                style={styles.item}
-                accessibilityLabel={`${loc.label}${isSel ? ', selected' : ''}`}
-              >
-                <LocationGlyph icon={loc.icon} selected={isSel} />
-                <T numberOfLines={1} style={[styles.label, isSel && { fontWeight: '700' }]}>
-                  {loc.label}
-                </T>
-              </Pressable>
-            );
-          })}
+          {strip.map((loc, i) => renderItem(loc, i))}
           <Pressable onPress={() => setMode('add')} style={styles.add} accessibilityLabel="Add location">
             <PlusIcon size={20} />
           </Pressable>
@@ -370,6 +386,8 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
   const changed =
     building !== loc.buildingType || (patch.details ?? '') !== (loc.details ?? '') || (withLabel && (icon !== loc.icon || label !== loc.label));
   const canSubmit = kind !== 'edit' || changed;
+  // confirming a searched place only selects it, so it is Done; saving is Save
+  const submitLabel = kind === 'delete' ? 'Delete' : kind === 'pick' ? 'Done' : 'Save';
 
   const header = (
     <View style={styles.formHead}>
@@ -387,10 +405,10 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
         disabled={!canSubmit}
         hitSlop={8}
         style={[styles.headBtn, styles.doneBtn, kind === 'delete' && { backgroundColor: colors.red }, !canSubmit && styles.doneOff]}
-        accessibilityLabel={kind === 'delete' ? 'Delete' : 'Save'}
+        accessibilityLabel={submitLabel}
         accessibilityState={{ disabled: !canSubmit }}
       >
-        <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>{kind === 'delete' ? 'Delete' : 'Save'}</T>
+        <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>{submitLabel}</T>
       </Pressable>
     </View>
   );
@@ -556,7 +574,7 @@ const styles = StyleSheet.create({
     height: 62,
     paddingHorizontal: 8,
   },
-  searchBtn: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center' },
+  searchBtn: { width: SEARCH_W, height: 44, alignItems: 'center', justifyContent: 'center' },
   sep: { width: 1.5, height: 40, backgroundColor: colors.black, marginHorizontal: 6 },
   item: { width: ITEM_W - 4, alignItems: 'center', marginHorizontal: 2 },
   circle: {

@@ -21,7 +21,7 @@ import {
 } from '@get/shared';
 import { useAuth } from './Auth';
 import * as remote from './remote';
-import type { Place } from '../places';
+import { regionCode, type Place } from '../places';
 
 export interface CartLine {
   offerId: string;
@@ -193,7 +193,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           const n = ++geocoding;
           const [g] = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
           const street = g && [g.streetNumber, g.street].filter(Boolean).join(' ');
-          const region = g && [g.region, g.postalCode].filter(Boolean).join(' ');
+          const region = g && [regionCode(g.region ?? undefined, g.country ?? undefined), g.postalCode].filter(Boolean).join(' ');
           const address = g && [street || g.name, g.city, region, g.country].filter(Boolean).join(', ');
           if (address && n === geocoding) setHere({ address });
         });
