@@ -309,7 +309,7 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
   return (
     <View style={styles.form}>
       {header}
-      <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
+      <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
         {/* the address comes from the map, so it is shown, not edited */}
         <View style={styles.addressBlock} accessibilityLabel={`Address: ${loc.address}`}>
           {addressLines(loc.address).map((line, i) => (
@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
   deleteAddress: { alignSelf: 'center', marginTop: 10, marginBottom: 6 },
   deleteText: { fontSize: 13, textAlign: 'center' },
   shareForm: { padding: 0, overflow: 'hidden' },
-  shareHead: { padding: 10 },
+  shareHead: { padding: 10, paddingBottom: 15 },
   shareCard: { flexDirection: 'row', height: SHARE_MAP_H, borderTopWidth: 1, borderTopColor: colors.black },
   shareAddress: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', paddingHorizontal: 14 },
   shareAddressLine: { color: colors.white, fontSize: 13, fontWeight: '600', lineHeight: 17 },
