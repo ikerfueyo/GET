@@ -62,12 +62,19 @@ type Props = {
    * when the key changes the map opens on this point at the globe's scale
    * (its radius in px); with `streets` it then flies down to street level
    */
-  enter: { point: LatLng; key: number; scale?: number; streets?: boolean };
+  enter: { point: LatLng; key: number; scale?: number; streets?: boolean; zoom?: number };
   /** when the key changes the map flies to the point if it is out of view */
   focus: { point: LatLng; key: number };
   onExit?: (center: LatLng) => void;
   /** a small capture (the Share card): the credits shrink to one line in the corner */
   mini?: boolean;
+  /** with these the pin can be dragged: called while it moves and where it is let go */
+  onPinDrag?: (p: LatLng) => void;
+  onPinDrop?: (p: LatLng) => void;
+  /** a neighborhood, city, state or country: a shaded outline around the pin */
+  area?: LatLng[];
+  /** with this the outline's corners can be dragged */
+  onAreaDrag?: (area: LatLng[]) => void;
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -76,7 +83,7 @@ const wrap = (x: number) => x - Math.floor(x);
 const worldPx = (zoom: number) => TILE * 2 ** zoom;
 const roadWidth = (base: number, zoom: number) => Math.max(0.8, base * 2 ** ((zoom - 16) * 0.8));
 
-export function StreetMap({ width, height, active, selected, enter, focus, onExit, mini }: Props) {
+export function StreetMap({ width, height, active, selected, enter, focus, onExit, mini, onPinDrag, onPinDrop, area, onAreaDrag }: Props) {
   const start = toWorld(enter.point.lng, enter.point.lat);
   const view = useRef<View2>({ ...start, zoom: MIN_ZOOM });
   /** letting go below this zoom goes back to the globe */
@@ -122,8 +129,10 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
     // the zoom whose ground scale matches the globe's at this latitude
     const cos = Math.cos((enter.point.lat * Math.PI) / 180);
     const z0 = enter.scale ? clamp(Math.log2((2 * Math.PI * enter.scale * cos) / TILE), MIN_ZOOM + 0.6, 12) : 12;
-    exitBelow.current = z0 - 0.5;
-    if (enter.streets) animate({ ...p, zoom: PIN_ZOOM }, 1800, { ...p, zoom: z0 });
+    // `zoom` fits an area on screen; a single place goes down to its streets
+    const target = enter.zoom ?? PIN_ZOOM;
+    exitBelow.current = Math.min(z0, target) - 0.5;
+    if (enter.streets) animate({ ...p, zoom: target }, 1800, { ...p, zoom: z0 });
     else {
       stopAnim();
       view.current = { ...p, zoom: z0 };
@@ -146,12 +155,28 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   }, [focus.key]);
 
   // ── gestures ──
-  type Mode = 'none' | 'pan' | 'pinch';
-  const g = useRef({ mode: 'none' as Mode, base: view.current, dx0: 0, dy0: 0, d0: 0, wp: { x: 0, y: 0 }, t: 0, moved: false });
+  type Mode = 'none' | 'pan' | 'pinch' | 'pin' | 'corner';
+  const g = useRef({ mode: 'none' as Mode, base: view.current, dx0: 0, dy0: 0, d0: 0, wp: { x: 0, y: 0 }, t: 0, moved: false, pin0: { x: 0, y: 0 }, corner: -1 });
   const touchesOf = (e: GestureResponderEvent) => e.nativeEvent.touches ?? [];
 
-  const latest = useRef({ width, height, onExit, selected });
-  latest.current = { width, height, onExit, selected };
+  const latest = useRef({ width, height, onExit, selected, onPinDrag, onPinDrop, area, onAreaDrag });
+  latest.current = { width, height, onExit, selected, onPinDrag, onPinDrop, area, onAreaDrag };
+
+  /** where the selected location's pin is on screen */
+  const pinOnScreen = () => onScreen(latest.current.selected);
+  const onScreen = (ll: LatLng) => {
+    const p = toWorld(ll.lng, ll.lat);
+    const W = worldPx(view.current.zoom);
+    const { width: w, height: h } = latest.current;
+    let dx = (p.x - view.current.x) * W;
+    if (dx > W / 2) dx -= W;
+    if (dx < -W / 2) dx += W;
+    return { x: w / 2 + dx, y: h / 2 + (p.y - view.current.y) * W };
+  };
+  const pinAt = (sx: number, sy: number) => {
+    const w = screenToWorld(sx, sy);
+    return fromWorld(wrap(w.x), clamp(w.y, 0, 1));
+  };
 
   const screenToWorld = (sx: number, sy: number, v: View2 = view.current) => {
     const W = worldPx(v.zoom);
@@ -174,11 +199,46 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
+        // inside a scrolling panel the map keeps the finger (dragging the pin or the streets)
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (e) => {
           stopAnim();
           g.current = { ...g.current, mode: 'none', base: { ...view.current }, t: Date.now(), moved: false };
+          // a touch on a corner of an editable outline moves that corner
+          const { area: outline, onAreaDrag: dragArea } = latest.current;
+          if (outline && dragArea) {
+            const tx = e.nativeEvent.locationX;
+            const ty = e.nativeEvent.locationY;
+            let best = -1;
+            let bestD = 26;
+            outline.forEach((c, i) => {
+              const sp = onScreen(c);
+              const d = Math.hypot(tx - sp.x, ty - sp.y);
+              if (d < bestD) [best, bestD] = [i, d];
+            });
+            if (best >= 0) {
+              g.current = { ...g.current, mode: 'corner', corner: best, pin0: onScreen(outline[best]) };
+              return;
+            }
+          }
+          // a touch on a draggable pin moves the pin instead of the map
+          const pin = pinOnScreen();
+          if (latest.current.onPinDrag && Math.hypot(e.nativeEvent.locationX - pin.x, e.nativeEvent.locationY - pin.y) < 28) {
+            g.current = { ...g.current, mode: 'pin', pin0: pin };
+          }
         },
         onPanResponderMove: (e, gs) => {
+          if (g.current.mode === 'corner') {
+            const { area: outline, onAreaDrag: dragArea } = latest.current;
+            const moved = pinAt(g.current.pin0.x + gs.dx, g.current.pin0.y + gs.dy);
+            if (outline && dragArea) dragArea(outline.map((c, i) => (i === g.current.corner ? moved : c)));
+            return;
+          }
+          if (g.current.mode === 'pin') {
+            g.current.moved = true;
+            latest.current.onPinDrag?.(pinAt(g.current.pin0.x + gs.dx, g.current.pin0.y + gs.dy));
+            return;
+          }
           const ts = touchesOf(e);
           if (ts.length >= 2) {
             const mx = (ts[0].pageX + ts[1].pageX) / 2;
@@ -206,6 +266,11 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
           redraw();
         },
         onPanResponderRelease: (e, gs) => {
+          if (g.current.mode === 'corner') return;
+          if (g.current.mode === 'pin') {
+            if (g.current.moved) latest.current.onPinDrop?.(pinAt(g.current.pin0.x + gs.dx, g.current.pin0.y + gs.dy));
+            return;
+          }
           if (!g.current.moved) {
             // a tap: on the red pin it flies down to the streets; anywhere else it does
             // nothing, since the selected location only changes from the Location Interface
@@ -380,6 +445,15 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
   if (pdx > W / 2) pdx -= W;
   if (pdx < -W / 2) pdx += W;
   const pin = { x: width / 2 + pdx, y: height / 2 + (sel.y - cyW) * W };
+  // an area's outline, drawn around its centre so it stays whole across the date line
+  const corners = (area ?? []).map((c) => {
+    const w = toWorld(c.lng, c.lat);
+    let dx = w.x - sel.x;
+    if (dx > 0.5) dx -= 1;
+    if (dx < -0.5) dx += 1;
+    return { x: pin.x + dx * W, y: pin.y + (w.y - sel.y) * W };
+  });
+  const outlineD = corners.length >= 3 ? `M${corners.map((c) => `${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join('L')}Z` : '';
 
   // street names, in white inside the street, kept apart from each other
   const labels: { l: Label; x: number; y: number; size: number }[] = [];
@@ -473,6 +547,13 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
         ))}
         </G>
         )}
+        {!!enter.key && !!outlineD && (
+          <G>
+            <Path d={outlineD} fill={colors.red} fillOpacity={0.18} stroke={colors.red} strokeWidth={2.5} strokeLinejoin="round" />
+            {onAreaDrag && corners.map((c, i) => <Circle key={i} cx={c.x} cy={c.y} r={6} fill={colors.white} stroke={colors.red} strokeWidth={2.5} />)}
+          </G>
+        )}
+        {/* an area keeps its pin at its centre too; only the outline moves */}
         {!!enter.key && (
           <G>
             <Ellipse cx={pin.x} cy={pin.y + 15} rx={8} ry={3} fill="#000" opacity={0.3} />

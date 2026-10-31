@@ -81,6 +81,8 @@ export interface SavedLocation extends LatLng {
   address: string;
   buildingType?: 'House' | 'Apartment' | 'Office' | 'Hotel' | 'Other';
   details?: string;
+  /** a neighborhood, city, state or country is an outline instead of a pin */
+  area?: LatLng[];
 }
 
 export interface PaymentMethod {

@@ -86,6 +86,7 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
             enter={enter}
             focus={{ point: selected, key: focusKey }}
             onExit={surface}
+            area={selected.area}
           />
         </Animated.View>
         {street && <StatusBar style="dark" />}
@@ -106,6 +107,7 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
         </View>
       </Animated.View>
 
+      {/* the side bar stays over every panel (only the Search sheet goes over it) */}
       <SideBar top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} slideX={intro.interpolate({ inputRange: [0, 1], outputRange: [-60, 0] })} />
 
       <SearchInterface

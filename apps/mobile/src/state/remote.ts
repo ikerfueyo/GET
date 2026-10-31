@@ -77,6 +77,7 @@ const toLocation = (r: Row): SavedLocation => ({
   lng: r.lng,
   buildingType: r.building_type ?? undefined,
   details: r.details ?? undefined,
+  area: Array.isArray(r.area) ? r.area : undefined,
 });
 
 const toPayment = (r: Row): PaymentMethod => ({
@@ -215,21 +216,33 @@ export async function updateProfile(userId: string, patch: Partial<Profile>) {
   check(await db().from('profiles').update(row).eq('id', userId));
 }
 
+/**
+ * Writes a location row. The `area` column (an outline) comes with a migration;
+ * until it has run, the rest of the row is still written.
+ */
+async function writeLocation(write: (row: Row) => PromiseLike<{ data: unknown; error: { message: string } | null }>, row: Row) {
+  const res = await write(row);
+  if (res.error && 'area' in row && /area/.test(res.error.message)) {
+    const { area: _area, ...rest } = row;
+    return check(await write(rest));
+  }
+  return check(res);
+}
+
 export async function insertLocation(userId: string, loc: SavedLocation, position: number) {
-  check(
-    await db().from('saved_locations').insert({
-      id: loc.id,
-      user_id: userId,
-      label: loc.label,
-      icon: loc.icon === 'here' ? 'pin' : loc.icon,
-      address: loc.address,
-      lat: loc.lat,
-      lng: loc.lng,
-      building_type: loc.buildingType ?? null,
-      details: loc.details ?? null,
-      position,
-    }),
-  );
+  await writeLocation((row) => db().from('saved_locations').insert(row), {
+    id: loc.id,
+    user_id: userId,
+    label: loc.label,
+    icon: loc.icon === 'here' ? 'pin' : loc.icon,
+    address: loc.address,
+    lat: loc.lat,
+    lng: loc.lng,
+    building_type: loc.buildingType ?? null,
+    details: loc.details ?? null,
+    position,
+    ...(loc.area ? { area: loc.area } : {}),
+  });
 }
 
 export async function updateLocation(id: string, patch: Partial<Omit<SavedLocation, 'id'>>) {
@@ -241,7 +254,8 @@ export async function updateLocation(id: string, patch: Partial<Omit<SavedLocati
   if (patch.lng !== undefined) row.lng = patch.lng;
   if ('buildingType' in patch) row.building_type = patch.buildingType ?? null;
   if ('details' in patch) row.details = patch.details || null;
-  check(await db().from('saved_locations').update(row).eq('id', id));
+  if ('area' in patch) row.area = patch.area ?? null;
+  await writeLocation((r) => db().from('saved_locations').update(r).eq('id', id), row);
 }
 
 export async function deleteLocation(id: string) {

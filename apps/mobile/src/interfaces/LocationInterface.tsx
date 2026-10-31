@@ -3,16 +3,16 @@
  * Tap selects (the icon's circle turns red, globe flies there), Search finds a
  * place, + adds one to the far right. Pressing a location (long-press, or a
  * tap on the one already selected) opens its options under its icon (LI 2 /
- * LI 8): Edit, Share and Save for Here or a searched place, Edit, Share and
- * Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
+ * LI 8): Share and Save for Here, Edit, Share and Save for a searched place,
+ * Edit, Share and Delete for a saved one. Edit and Save open LI 3 / LI 4 / LI 9, Delete LI 10.
  */
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Share, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
-import { addressLines, type SavedLocation } from '@get/shared';
+import { addressLines, formatAddress, missingParts, type AddressParts, type LatLng, type PlaceKind, type SavedLocation } from '@get/shared';
 import { BackIcon, CheckIcon, ChevronIcon, CloseIcon, PlaceIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { StreetMap } from '../components/StreetMap';
 import { T } from '../components/ui';
-import { geocode, placeSubtitle, searchPlaces, type Place } from '../places';
+import { fallbackOutline, fetchOutline, geocode, partsOf, placeSubtitle, reverseGeocode, searchPlaces, type Place } from '../places';
 import { useApp } from '../state/AppState';
 import { colors, fonts } from '../theme';
 
@@ -44,10 +44,41 @@ function LocationGlyph({ icon, selected, size = 34 }: { icon: Icon; selected: bo
   );
 }
 
-/** pick = confirm a searched place (LI 14, no label); save = save Here, a searched place or an added one (LI 4 / LI 19) */
-type Form = { kind: 'edit' | 'save' | 'pick' | 'delete' | 'share'; loc: SavedLocation };
+/** save = save Here or a searched place from its options (LI 4) */
+type Form = { kind: 'edit' | 'save' | 'delete' | 'share'; loc: SavedLocation };
 
-const placeToLocation = (p: Place): SavedLocation => ({ id: 'loc_new', label: p.name, icon: 'pin', address: p.address, lat: p.lat, lng: p.lng });
+/** a place on the map screen, with what was filled in under its address and its label (icon, and `name`) */
+type Spot = Place & Pick<SavedLocation, 'buildingType' | 'details'> & { icon?: Icon };
+
+const placeToLocation = (p: Spot): SavedLocation => ({
+  id: 'loc_new',
+  label: p.name,
+  icon: 'pin',
+  address: p.address,
+  lat: p.lat,
+  lng: p.lng,
+  ...(p.kind === 'area' && p.area ? { area: p.area } : {}),
+  ...(p.buildingType ? { buildingType: p.buildingType } : {}),
+  ...(p.details ? { details: p.details } : {}),
+});
+
+/** a saved place back on the map screen: an outline, or no street, makes it an area */
+const locationToPlace = (l: SavedLocation): Spot => {
+  const parts = partsOf(l);
+  const kind = l.area || !parts.street ? 'area' : 'point';
+  return { name: l.label, icon: l.icon, address: l.address, parts, lat: l.lat, lng: l.lng, kind, area: l.area, buildingType: l.buildingType, details: l.details };
+};
+
+/** the centre and zoom that show the whole outline */
+function fitArea(area: LatLng[], width: number, height: number): { point: LatLng; zoom: number } {
+  const merc = (lat: number) => (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2;
+  const unmerc = (y: number) => (Math.atan(Math.exp(Math.PI * (1 - 2 * y))) * 360) / Math.PI - 90;
+  const xs = area.map((c) => (c.lng + 180) / 360);
+  const ys = area.map((c) => merc(c.lat));
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const zoom = Math.log2(Math.min((width * 0.75) / ((x1 - x0 || 1e-6) * 512), (height * 0.4) / ((y1 - y0 || 1e-6) * 512)));
+  return { point: { lat: unmerc((y0 + y1) / 2), lng: ((x0 + x1) / 2) * 360 - 180 }, zoom: Math.max(2.2, Math.min(17, zoom)) };
+}
 
 export function LocationInterface({ top }: { top: number }) {
   const { locations, selected, selectLocation, pickLocation, saveLocation, updateLocation, removeLocation, recentPlaces, addRecentPlace } = useApp();
@@ -99,16 +130,57 @@ export function LocationInterface({ top }: { top: number }) {
 
   // LI 13 / LI 18: the chosen place on the street map, to confirm with ✓
   const [preview, setPreview] = useState<Place | null>(null);
+  // where the place ends up: its pin can be dragged (or an area's outline reshaped) and its address corrected before ✓
+  const [spot, setSpot] = useState<Spot | null>(null);
+  // the address panel (Edit on the address card) or the label panel (the icon and name in the top bar)
+  const [panel, setPanel] = useState<'address' | 'label' | null>(null);
+  const editAddress = panel === 'address';
+  // the place as it was when a panel opened, for its Cancel
+  const beforeEdit = useRef<Spot | null>(null);
+  // a saved place opened from its Edit option comes to this same screen first
+  const [editing, setEditing] = useState<SavedLocation | null>(null);
+  const [view, setView] = useState<{ point: LatLng; key: number; zoom?: number }>({ point: { lat: 0, lng: 0 }, key: 0 });
+  const open = (p: Spot, from: SavedLocation | null = null) => {
+    const kind: PlaceKind = p.kind ?? 'point';
+    setPreview(p);
+    setSpot({ ...p, kind, parts: partsOf(p), icon: p.icon ?? 'pin' });
+    setEditing(from);
+    setPanel(null);
+    // a point flies down to its streets; an area waits for its outline, then fits it on screen
+    if (kind === 'point') setView({ point: p, key: 1 });
+    else if (p.area) setView({ ...fitArea(p.area, width, height), key: 1 });
+    else setView({ point: p, key: 0 });
+  };
   const choose = (p: Place) => {
     addRecentPlace(p);
-    setPreview(p);
+    open(p);
   };
+  useEffect(() => {
+    if (!preview || preview.kind !== 'area' || preview.area) return;
+    const ctrl = new AbortController();
+    const done = (area: LatLng[]) => {
+      if (ctrl.signal.aborted) return;
+      setSpot((s) => (s ? { ...s, area } : s));
+      setView({ ...fitArea(area, width, height), key: 1 });
+    };
+    fetchOutline(preview, ctrl.signal)
+      .then((a) => done(a ?? fallbackOutline(preview)))
+      .catch(() => done(fallbackOutline(preview)));
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
   const finish = () => {
     setForm(null);
     setPreview(null);
+    setSpot(null);
+    setEditing(null);
     setMode('strip');
     setQuery('');
   };
+  const moveSpot = useMovablePin((p) => setSpot((s) => (s ? { ...s, ...p } : s)), (place) =>
+    // the searched name stays on top; only the address follows the pin
+    setSpot((s) => (s ? { ...s, address: place.address, parts: place.parts, lat: place.lat, lng: place.lng } : s)),
+  );
 
   /** `index` in the scrolling part, or null for the searched place before the divider */
   const openMenu = (id: string, index: number | null) => {
@@ -118,16 +190,24 @@ export function LocationInterface({ top }: { top: number }) {
     setMenuFor(id);
   };
 
-  const previewMap = preview && (
+  const isArea = spot?.kind === 'area';
+  const previewMap = preview && spot && (
     <View style={StyleSheet.absoluteFill}>
       <StreetMap
         key={`${preview.lat},${preview.lng}`}
         width={width}
         height={height}
         active
-        selected={{ ...preview, icon: 'pin' }}
-        enter={{ point: preview, key: 1, streets: true }}
-        focus={{ point: preview, key: 1 }}
+        selected={{ lat: spot.lat, lng: spot.lng, icon: spot.icon ?? 'pin' }}
+        enter={{ ...view, streets: true }}
+        focus={view}
+        area={isArea ? spot.area : undefined}
+        // the pin or outline moves only before ✓; once the panel is open it stays put
+        {...(form
+          ? {}
+          : isArea
+            ? { onAreaDrag: (area: LatLng[]) => setSpot((s) => (s ? { ...s, area } : s)) }
+            : { onPinDrag: moveSpot.drag, onPinDrop: moveSpot.drop })}
       />
     </View>
   );
@@ -144,14 +224,15 @@ export function LocationInterface({ top }: { top: number }) {
               form={form}
               onCancel={() => setForm(null)}
               onDone={(patch) => {
+                // an edit's changes from the map screen go in with the rest
                 if (form.kind === 'edit') updateLocation(form.loc.id, patch);
-                else if (form.kind === 'pick') pickLocation(form.loc, form.loc.label, form.loc.address, patch);
                 else if (form.kind === 'save') {
                   const { id: _id, ...rest } = { ...form.loc, ...patch };
                   saveLocation({ ...rest, icon: patch.icon ?? 'pin' });
                 } else removeLocation(form.loc.id);
                 if (preview) finish();
                 else setForm(null);
+                setEditing(null);
               }}
             />
           )}
@@ -160,26 +241,168 @@ export function LocationInterface({ top }: { top: number }) {
     );
   }
 
-  if (preview) {
+  if (preview && spot) {
+    const parts = spot.parts ?? partsOf(spot);
+    const complete = missingParts(parts, spot.kind).length === 0;
+    const ok = complete && (!isArea || !!spot.area);
+    const icon = spot.icon ?? 'pin';
+    const label = spot.name.trim() || LABEL_ICONS.find((l) => l.icon === icon)?.name || 'Location';
+    // an edit's changes, so ✓ waits until there is one
+    const moved: Partial<SavedLocation> = {};
+    if (editing) {
+      if (spot.address !== editing.address) moved.address = spot.address;
+      if (spot.lat !== editing.lat || spot.lng !== editing.lng) Object.assign(moved, { lat: spot.lat, lng: spot.lng });
+      const area = isArea ? spot.area : undefined;
+      if (JSON.stringify(area) !== JSON.stringify(editing.area)) moved.area = area;
+      if (spot.buildingType !== editing.buildingType) moved.buildingType = spot.buildingType;
+      if ((spot.details ?? '') !== (editing.details ?? '')) moved.details = spot.details;
+      if (icon !== editing.icon) moved.icon = icon;
+      if (label !== editing.label) moved.label = label;
+    }
+    const ready = ok && (!editing || Object.keys(moved).length > 0);
+    // ✓ finishes here: everything (address, label) was set on this screen
+    const confirm = () => {
+      if (editing) updateLocation(editing.id, moved);
+      else if (mode === 'search') {
+        // Search only selects the place (LI 14)
+        pickLocation(spot, label, spot.address, { area: isArea ? spot.area : undefined, buildingType: spot.buildingType, details: spot.details, icon });
+      } else {
+        // Add puts it at the far right of the strip (LI 19)
+        const { id: _id, ...loc } = placeToLocation(spot);
+        saveLocation({ ...loc, icon, label });
+      }
+      finish();
+    };
+    const caption = isArea
+      ? spot.area
+        ? 'Drag the corners to reshape the area'
+        : 'Finding the area…'
+      : moveSpot.busy
+        ? 'Finding the address…'
+        : 'Drag the pin to adjust the location';
+    const hint = ok || (isArea && !spot.area) ? caption : `${caption} · Tap Edit to finish the address`;
     return (
       <>
         {previewMap}
         <View style={[styles.wrap, { top }]}>
           <View style={styles.searchRow}>
-            <Pressable onPress={() => setPreview(null)} hitSlop={10} accessibilityLabel="Back">
+            <Pressable
+              onPress={() => {
+                setPreview(null);
+                setSpot(null);
+                if (editing) finish();
+              }}
+              // while a panel is open it has the say: back and ✓ wait for its Cancel or Save
+              disabled={!!panel}
+              hitSlop={10}
+              accessibilityLabel="Back"
+            >
               <BackIcon size={20} />
             </Pressable>
-            <T numberOfLines={1} style={styles.previewTitle}>
-              {preview.name}
-            </T>
+            {/* its label: tap to change the icon and name */}
             <Pressable
-              onPress={() => setForm({ kind: mode === 'search' ? 'pick' : 'save', loc: placeToLocation(preview) })}
+              onPress={() => {
+                beforeEdit.current = spot;
+                setPanel('label');
+              }}
+              disabled={!!panel}
+              style={styles.previewLabel}
+              accessibilityLabel={`Label: ${label}. Edit`}
+            >
+              <LocationGlyph icon={icon} selected size={28} />
+              <T numberOfLines={1} style={styles.previewTitle}>
+                {spot.name}
+              </T>
+            </Pressable>
+            <Pressable
+              onPress={confirm}
+              disabled={!ready || !!panel}
               hitSlop={10}
+              style={!ready && { opacity: 0.35 }}
               accessibilityLabel="Use this location"
+              accessibilityState={{ disabled: !ready }}
             >
               <CheckIcon size={22} />
             </Pressable>
           </View>
+          {panel === 'label' ? (
+            <View style={[styles.form, styles.previewPanel]}>
+              <View style={styles.previewPanelHead}>
+                <Pressable
+                  onPress={() => {
+                    if (beforeEdit.current) setSpot(beforeEdit.current);
+                    setPanel(null);
+                  }}
+                  hitSlop={8}
+                  style={styles.headBtn}
+                  accessibilityLabel="Cancel editing label"
+                >
+                  <T style={styles.headText}>Cancel</T>
+                </Pressable>
+                <Pressable onPress={() => setPanel(null)} hitSlop={8} style={[styles.headBtn, styles.doneBtn]} accessibilityLabel="Save label">
+                  <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>Save</T>
+                </Pressable>
+              </View>
+              <LabelEditor icon={icon} name={spot.name} onIcon={(i) => setSpot({ ...spot, icon: i })} onName={(name) => setSpot({ ...spot, name })} />
+            </View>
+          ) : editAddress ? (
+            <View style={[styles.form, styles.previewPanel]}>
+              {/* Cancel puts the address back; Save stays grey until the required boxes are filled */}
+              <View style={styles.previewPanelHead}>
+                <Pressable
+                  onPress={() => {
+                    if (beforeEdit.current) setSpot(beforeEdit.current);
+                    setPanel(null);
+                  }}
+                  hitSlop={8}
+                  style={styles.headBtn}
+                  accessibilityLabel="Cancel editing address"
+                >
+                  <T style={styles.headText}>Cancel</T>
+                </Pressable>
+                <Pressable
+                  onPress={() => setPanel(null)}
+                  disabled={!complete}
+                  hitSlop={8}
+                  style={[styles.headBtn, styles.doneBtn, !complete && styles.doneOff]}
+                  accessibilityLabel="Save address"
+                  accessibilityState={{ disabled: !complete }}
+                >
+                  <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>Save</T>
+                </Pressable>
+              </View>
+              <ScrollView style={{ maxHeight: height * 0.62 }} keyboardShouldPersistTaps="handled">
+                <AddressEditor
+                  parts={parts}
+                  kind={spot.kind ?? 'point'}
+                  onChange={(p) => setSpot({ ...spot, parts: p, address: formatAddress(p) })}
+                  building={spot.buildingType}
+                  onBuilding={(buildingType) => setSpot({ ...spot, buildingType })}
+                  details={spot.details}
+                  onDetails={(details) => setSpot({ ...spot, details })}
+                />
+              </ScrollView>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => {
+                beforeEdit.current = spot;
+                setPanel('address');
+              }}
+              style={styles.previewAddress}
+              accessibilityLabel={`Address: ${spot.address}. Edit`}
+            >
+              <View style={{ flex: 1 }}>
+                {addressLines(spot.address).map((line, i) => (
+                  <T key={i} style={styles.menuAddress}>
+                    {line}
+                  </T>
+                ))}
+              </View>
+              <T style={styles.previewEdit}>Edit</T>
+            </Pressable>
+          )}
+          {!panel && <T style={styles.dragHint}>{hint}</T>}
         </View>
       </>
     );
@@ -307,13 +530,16 @@ export function LocationInterface({ top }: { top: number }) {
               </T>
             ))}
           </View>
-          <MenuItem
-            label="Edit"
-            onPress={() => {
-              close();
-              setForm({ kind: 'edit', loc: menuLoc });
-            }}
-          />
+          {/* Here follows the phone, so there is nothing to edit: only Share and Save */}
+          {menuLoc.icon !== 'here' && (
+            <MenuItem
+              label="Edit"
+              onPress={() => {
+                close();
+                open(locationToPlace(menuLoc), menuLoc);
+              }}
+            />
+          )}
           <MenuItem
             label="Share"
             onPress={() => {
@@ -353,6 +579,193 @@ export function LocationInterface({ top }: { top: number }) {
   );
 }
 
+/** A pin being dragged: it follows the finger, and where it is let go its address is looked up. */
+function useMovablePin(onMove: (p: LatLng) => void, onFound: (place: Place) => void) {
+  const [busy, setBusy] = useState(false);
+  const ctrl = useRef<AbortController | null>(null);
+  const on = useRef({ onMove, onFound });
+  on.current = { onMove, onFound };
+  useEffect(() => () => ctrl.current?.abort(), []);
+  return {
+    busy,
+    drag: (p: LatLng) => on.current.onMove(p),
+    drop: (p: LatLng) => {
+      on.current.onMove(p);
+      ctrl.current?.abort();
+      const c = new AbortController();
+      ctrl.current = c;
+      setBusy(true);
+      reverseGeocode(p, c.signal)
+        // offline the pin still moves, and the address can be typed
+        .then((place) => place && !c.signal.aborted && on.current.onFound({ ...place, lat: p.lat, lng: p.lng }))
+        .catch(() => {})
+        .finally(() => ctrl.current === c && setBusy(false));
+    },
+  };
+}
+
+const ADDRESS_FIELDS: { key: keyof AddressParts; label: string }[] = [
+  { key: 'street', label: 'Street address' },
+  { key: 'neighborhood', label: 'Neighborhood or district' },
+  { key: 'city', label: 'City' },
+  { key: 'region', label: 'State / Province' },
+  { key: 'postcode', label: 'ZIP code' },
+  { key: 'country', label: 'Country' },
+];
+
+/**
+ * The address in its parts. An exact place needs every box but the
+ * neighborhood or district. An area (a
+ * neighborhood or district, city, state/province or country) has no street or
+ * ZIP code, and needs every box broader than its first filled one. Missing
+ * boxes are outlined in red.
+ */
+function AddressEditor({
+  parts,
+  kind,
+  onChange,
+  building,
+  onBuilding,
+  details,
+  onDetails,
+}: {
+  parts: AddressParts;
+  kind: PlaceKind;
+  onChange: (p: AddressParts) => void;
+  building?: Building;
+  onBuilding: (b: Building | undefined) => void;
+  details?: string;
+  onDetails: (d: string | undefined) => void;
+}) {
+  const missing = missingParts(parts, kind);
+  const box = ({ key, label }: (typeof ADDRESS_FIELDS)[number]) => (
+    <View key={key} style={{ flex: 1 }}>
+      <T style={styles.partLabel}>{label}</T>
+      <TextInput
+        value={parts[key]}
+        onChangeText={(v) => onChange({ ...parts, [key]: v })}
+        placeholderTextColor={colors.muted}
+        autoCorrect={false}
+        style={[styles.field, styles.fieldText, missing.includes(key) && styles.fieldMissing]}
+        accessibilityLabel={label}
+      />
+    </View>
+  );
+  const [street, hood, city, region, postcode, country] = ADDRESS_FIELDS;
+  const point = kind === 'point';
+  return (
+    <View style={{ gap: 6 }}>
+      {point && (
+        <>
+          {/* an exact place's building and how to find it, right under its street */}
+          {box(street)}
+          <BuildingField value={building} onChange={onBuilding} small />
+          <DetailsFields value={details} onChange={onDetails} small />
+        </>
+      )}
+      {box(hood)}
+      {box(city)}
+      {point ? (
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {box(region)}
+          {box(postcode)}
+        </View>
+      ) : (
+        box(region)
+      )}
+      {box(country)}
+      {missing.length > 0 && <T style={styles.missingNote}>{point ? 'An exact place needs every box but the neighborhood or district.' : 'An area needs every box below the first one filled.'}</T>}
+    </View>
+  );
+}
+
+/** the label's icon (Home, Work, School, Other) and its name; changing the icon keeps the name */
+function LabelEditor({ icon, name, onIcon, onName }: { icon: Icon; name: string; onIcon: (i: Icon) => void; onName: (n: string) => void }) {
+  return (
+    <>
+      <View style={styles.labelRow}>
+        {LABEL_ICONS.map((l) => {
+          const on = l.icon === icon;
+          return (
+            <Pressable key={l.icon} onPress={() => onIcon(l.icon)} style={[styles.chip, on && { backgroundColor: colors.black }]} accessibilityLabel={l.name}>
+              <PlaceIcon icon={l.icon} size={12} color={on ? colors.white : colors.black} />
+              <T style={[styles.chipText, on && { color: colors.white }]}>{l.name}</T>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={[styles.field, { paddingRight: 6 }]}>
+        <TextInput value={name} onChangeText={onName} placeholder="Name" placeholderTextColor={colors.muted} style={[styles.fieldText, { flex: 1 }]} accessibilityLabel="Name" />
+        <Pressable onPress={() => onName('')} hitSlop={8} style={styles.clear} accessibilityLabel="Clear name">
+          <CloseIcon size={9} color={colors.white} />
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
+function BuildingField({ value, onChange, small }: { value?: Building; onChange: (b: Building | undefined) => void; small?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View>
+      <T style={small ? styles.partLabel : styles.fieldLabel}>Building type</T>
+      <Pressable onPress={() => setOpen((v) => !v)} style={styles.field} accessibilityLabel="Building type">
+        <T style={[styles.fieldText, !value && { color: colors.muted }]}>{value ?? 'Choose'}</T>
+        <View style={{ transform: [{ rotate: open ? '-90deg' : '90deg' }] }}>
+          <ChevronIcon size={14} />
+        </View>
+      </Pressable>
+      {open && (
+        <View style={styles.dropdown}>
+          {BUILDINGS.map((b) => (
+            <Pressable
+              key={b}
+              onPress={() => {
+                onChange(b);
+                setOpen(false);
+              }}
+              style={styles.dropRow}
+            >
+              <T style={[styles.fieldText, b === value && { fontWeight: '700' }]}>{b}</T>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Additional details, one box per line of `value`. Once the first box has
+ * something in it a second appears; emptying the first moves the second up
+ * (or removes the empty second), back to a single "Additional details".
+ */
+function DetailsFields({ value, onChange, small }: { value?: string; onChange: (d: string | undefined) => void; small?: boolean }) {
+  const filled = (value ?? '').split('\n').filter(Boolean).slice(0, 2);
+  const boxes = filled.length < 2 ? [...filled, ''] : filled;
+  const set = (i: number, v: string) => {
+    const next = boxes.map((b, j) => (j === i ? v.replace(/\n/g, ' ') : b)).filter(Boolean);
+    onChange(next.length ? next.join('\n') : undefined);
+  };
+  return (
+    <>
+      {boxes.map((b, i) => (
+        <View key={i}>
+          <T style={small ? styles.partLabel : styles.fieldLabel}>{boxes.length > 1 ? `Additional details ${i + 1}` : 'Additional details'}</T>
+          <TextInput
+            value={b}
+            onChangeText={(v) => set(i, v)}
+            placeholder={i === 0 ? 'e.g. House number or name' : undefined}
+            placeholderTextColor={colors.muted}
+            style={[styles.field, styles.fieldText]}
+            accessibilityLabel={boxes.length > 1 ? `Additional details ${i + 1}` : 'Additional details'}
+          />
+        </View>
+      ))}
+    </>
+  );
+}
+
 function MenuItem({ label, onPress, danger, last }: { label: string; onPress: () => void; danger?: boolean; last?: boolean }) {
   return (
     <Pressable onPress={onPress} style={[styles.menuItem, last && { borderBottomWidth: 0 }]}>
@@ -367,10 +780,11 @@ function MenuItem({ label, onPress, danger, last }: { label: string; onPress: ()
  */
 function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => void; onDone: (patch: Partial<Omit<SavedLocation, 'id'>>) => void }) {
   const { kind, loc } = form;
+  const { height } = useWindowDimensions();
+  const address = loc.address;
   const firstLine = loc.address.split(',')[0].trim();
   const [building, setBuilding] = useState<Building | undefined>(loc.buildingType);
-  const [pickBuilding, setPickBuilding] = useState(false);
-  const [details, setDetails] = useState(loc.details ?? '');
+  const [details, setDetails] = useState<string | undefined>(loc.details);
   // saving: Other by default, named after the address's first line (Here) or the place
   const [icon, setIcon] = useState<Icon>(kind === 'save' ? 'pin' : loc.icon);
   const [name, setName] = useState(kind === 'save' ? (loc.icon === 'here' ? firstLine : loc.label) : loc.label);
@@ -379,15 +793,16 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
   const label = name.trim() || LABEL_ICONS.find((l) => l.icon === icon)?.name || loc.label;
   const patch: Partial<Omit<SavedLocation, 'id'>> = {
     buildingType: building,
-    details: details.trim() || undefined,
+    details: details?.trim() || undefined,
     ...(withLabel ? { icon, label } : {}),
   };
   // an edit can only be saved once it would change something (changing a box back counts as no change)
   const changed =
-    building !== loc.buildingType || (patch.details ?? '') !== (loc.details ?? '') || (withLabel && (icon !== loc.icon || label !== loc.label));
+    building !== loc.buildingType ||
+    (patch.details ?? '') !== (loc.details ?? '') ||
+    (withLabel && (icon !== loc.icon || label !== loc.label));
   const canSubmit = kind !== 'edit' || changed;
-  // confirming a searched place only selects it, so it is Done; saving is Save
-  const submitLabel = kind === 'delete' ? 'Delete' : kind === 'pick' ? 'Done' : 'Save';
+  const submitLabel = kind === 'delete' ? 'Delete' : 'Save';
 
   const header = (
     <View style={styles.formHead}>
@@ -432,74 +847,24 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
   return (
     <View style={styles.form}>
       {header}
-      <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
-        {/* the address comes from the map, so it is shown, not edited */}
-        <View style={styles.addressBlock} accessibilityLabel={`Address: ${loc.address}`}>
-          {addressLines(loc.address).map((line, i) => (
+      <ScrollView style={{ maxHeight: Math.max(460, height * 0.68) }} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
+        <T style={styles.fieldLabel}>Address</T>
+        {/* set on the map screen (Here's comes from the phone), so it is shown, not edited */}
+        <View style={styles.addressBlock} accessibilityLabel={`Address: ${address}`}>
+          {addressLines(address).map((line, i) => (
             <T key={i} style={styles.addressLine}>
               {line}
             </T>
           ))}
         </View>
 
-        <T style={styles.fieldLabel}>Building type</T>
-        <Pressable onPress={() => setPickBuilding((v) => !v)} style={styles.field} accessibilityLabel="Building type">
-          <T style={[styles.fieldText, !building && { color: colors.muted }]}>{building ?? 'Choose'}</T>
-          <View style={{ transform: [{ rotate: pickBuilding ? '-90deg' : '90deg' }] }}>
-            <ChevronIcon size={14} />
-          </View>
-        </Pressable>
-        {pickBuilding && (
-          <View style={styles.dropdown}>
-            {BUILDINGS.map((b) => (
-              <Pressable
-                key={b}
-                onPress={() => {
-                  setBuilding(b);
-                  setPickBuilding(false);
-                }}
-                style={styles.dropRow}
-              >
-                <T style={[styles.fieldText, b === building && { fontWeight: '700' }]}>{b}</T>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        <T style={styles.fieldLabel}>Additional details</T>
-        <TextInput
-          value={details}
-          onChangeText={setDetails}
-          placeholder="e.g. House number or name"
-          placeholderTextColor={colors.muted}
-          style={[styles.field, styles.fieldText]}
-        />
+        <BuildingField value={building} onChange={setBuilding} />
+        <DetailsFields value={details} onChange={setDetails} />
 
         {withLabel && (
           <>
             <T style={styles.fieldLabel}>Label</T>
-            <View style={styles.labelRow}>
-              {LABEL_ICONS.map((l) => {
-                const on = l.icon === icon;
-                return (
-                  <Pressable
-                    key={l.icon}
-                    onPress={() => setIcon(l.icon)}
-                    style={[styles.chip, on && { backgroundColor: colors.black }]}
-                    accessibilityLabel={l.name}
-                  >
-                    <PlaceIcon icon={l.icon} size={12} color={on ? colors.white : colors.black} />
-                    <T style={[styles.chipText, on && { color: colors.white }]}>{l.name}</T>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <View style={[styles.field, { paddingRight: 6 }]}>
-              <TextInput value={name} onChangeText={setName} placeholder="Name" placeholderTextColor={colors.muted} style={[styles.fieldText, { flex: 1 }]} />
-              <Pressable onPress={() => setName('')} hitSlop={8} style={styles.clear} accessibilityLabel="Clear name">
-                <CloseIcon size={9} color={colors.white} />
-              </Pressable>
-            </View>
+            <LabelEditor icon={icon} name={name} onIcon={setIcon} onName={setName} />
           </>
         )}
       </ScrollView>
@@ -517,7 +882,7 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
 function LocationShare({ loc, onCancel }: { loc: SavedLocation; onCancel: () => void }) {
   const shared = { ...loc, icon: 'pin' as const };
   const address = addressLines(loc.address);
-  const lines = [...address, loc.buildingType, loc.details].filter((l): l is string => !!l);
+  const lines = [...address, loc.buildingType, ...(loc.details ?? '').split('\n')].filter((l): l is string => !!l);
   const mapView = useRef({ point: { lat: loc.lat, lng: loc.lng }, key: 1, streets: true }).current;
   useEffect(() => {
     const link = `https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}`;
@@ -608,7 +973,8 @@ const styles = StyleSheet.create({
   row: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#333' },
   rowTitle: { fontSize: 15, fontWeight: '600', color: colors.white },
   rowSub: { fontSize: 12, color: colors.hairline },
-  previewTitle: { flex: 1, fontSize: 18, fontWeight: '600' },
+  previewTitle: { flexShrink: 1, fontSize: 18, fontWeight: '600' },
+  previewLabel: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   menu: { position: 'absolute', top: 66, width: MENU_W, backgroundColor: colors.white, borderRadius: 8, borderWidth: 1, borderColor: colors.black, overflow: 'hidden' },
   menuHead: { backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.black },
   menuAddress: { fontSize: 12, color: colors.white },
@@ -631,7 +997,15 @@ const styles = StyleSheet.create({
   shareMap: { width: SHARE_MAP_W, alignSelf: 'stretch', justifyContent: 'center', backgroundColor: colors.white },
   headCenter: { alignItems: 'center', flex: 1, marginHorizontal: 6 },
   headLabel: { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  addressBlock: { marginTop: 22, marginBottom: 10 },
+  addressBlock: {},
+  partLabel: { fontSize: 12, color: colors.muted, marginBottom: 2 },
+  fieldMissing: { borderColor: colors.red, borderWidth: 1.5 },
+  missingNote: { fontSize: 12, color: colors.red },
+  previewAddress: { flexDirection: 'row', alignItems: 'center', marginTop: 6, backgroundColor: colors.black, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  previewEdit: { color: colors.white, fontSize: 14, fontWeight: '700', marginLeft: 10 },
+  previewPanel: { marginTop: 6 },
+  previewPanelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
+  dragHint: { alignSelf: 'center', marginTop: 6, backgroundColor: colors.black, color: colors.white, fontSize: 12, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
   addressLine: { fontSize: 15, fontWeight: '600', lineHeight: 20 },
   fieldLabel: { fontSize: 15, fontWeight: '600', marginTop: 10, marginBottom: 4 },
   field: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.white, borderRadius: 6, borderWidth: 1, borderColor: colors.black, paddingHorizontal: 10, height: 38 },
