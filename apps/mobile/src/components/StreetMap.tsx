@@ -71,7 +71,7 @@ type Props = {
   /** with these the pin can be dragged: called while it moves and where it is let go */
   onPinDrag?: (p: LatLng) => void;
   onPinDrop?: (p: LatLng) => void;
-  /** a neighborhood, city, state or country: a shaded outline instead of the pin */
+  /** a neighborhood, city, state or country: a shaded outline around the pin */
   area?: LatLng[];
   /** with this the outline's corners can be dragged */
   onAreaDrag?: (area: LatLng[]) => void;
@@ -553,7 +553,8 @@ export function StreetMap({ width, height, active, selected, enter, focus, onExi
             {onAreaDrag && corners.map((c, i) => <Circle key={i} cx={c.x} cy={c.y} r={6} fill={colors.white} stroke={colors.red} strokeWidth={2.5} />)}
           </G>
         )}
-        {!!enter.key && !outlineD && (
+        {/* an area keeps its pin at its centre too; only the outline moves */}
+        {!!enter.key && (
           <G>
             <Ellipse cx={pin.x} cy={pin.y + 15} rx={8} ry={3} fill="#000" opacity={0.3} />
             <Circle cx={pin.x} cy={pin.y} r={13} fill={colors.red} />
