@@ -44,14 +44,11 @@ function LocationGlyph({ icon, selected, size = 34 }: { icon: Icon; selected: bo
   );
 }
 
-/**
- * save = save Here, a searched place or an added one (LI 4 / LI 19).
- * `moved` is what the map screen changed before an edit: address, pin or outline.
- */
-type Form = { kind: 'edit' | 'save' | 'delete' | 'share'; loc: SavedLocation; moved?: Partial<SavedLocation>; fromMap?: boolean };
+/** save = save Here or a searched place from its options (LI 4) */
+type Form = { kind: 'edit' | 'save' | 'delete' | 'share'; loc: SavedLocation };
 
-/** a place on the map screen, with what was filled in under its address */
-type Spot = Place & Pick<SavedLocation, 'buildingType' | 'details'>;
+/** a place on the map screen, with what was filled in under its address and its label (icon, and `name`) */
+type Spot = Place & Pick<SavedLocation, 'buildingType' | 'details'> & { icon?: Icon };
 
 const placeToLocation = (p: Spot): SavedLocation => ({
   id: 'loc_new',
@@ -69,7 +66,7 @@ const placeToLocation = (p: Spot): SavedLocation => ({
 const locationToPlace = (l: SavedLocation): Spot => {
   const parts = partsOf(l);
   const kind = l.area || !parts.street ? 'area' : 'point';
-  return { name: l.label, address: l.address, parts, lat: l.lat, lng: l.lng, kind, area: l.area, buildingType: l.buildingType, details: l.details };
+  return { name: l.label, icon: l.icon, address: l.address, parts, lat: l.lat, lng: l.lng, kind, area: l.area, buildingType: l.buildingType, details: l.details };
 };
 
 /** the centre and zoom that show the whole outline */
@@ -135,8 +132,10 @@ export function LocationInterface({ top }: { top: number }) {
   const [preview, setPreview] = useState<Place | null>(null);
   // where the place ends up: its pin can be dragged (or an area's outline reshaped) and its address corrected before ✓
   const [spot, setSpot] = useState<Spot | null>(null);
-  const [editAddress, setEditAddress] = useState(false);
-  // the place as it was when the address panel opened, for its Cancel
+  // the address panel (Edit on the address card) or the label panel (the icon and name in the top bar)
+  const [panel, setPanel] = useState<'address' | 'label' | null>(null);
+  const editAddress = panel === 'address';
+  // the place as it was when a panel opened, for its Cancel
   const beforeEdit = useRef<Spot | null>(null);
   // a saved place opened from its Edit option comes to this same screen first
   const [editing, setEditing] = useState<SavedLocation | null>(null);
@@ -144,9 +143,9 @@ export function LocationInterface({ top }: { top: number }) {
   const open = (p: Spot, from: SavedLocation | null = null) => {
     const kind: PlaceKind = p.kind ?? 'point';
     setPreview(p);
-    setSpot({ ...p, kind, parts: partsOf(p) });
+    setSpot({ ...p, kind, parts: partsOf(p), icon: p.icon ?? 'pin' });
     setEditing(from);
-    setEditAddress(false);
+    setPanel(null);
     // a point flies down to its streets; an area waits for its outline, then fits it on screen
     if (kind === 'point') setView({ point: p, key: 1 });
     else if (p.area) setView({ ...fitArea(p.area, width, height), key: 1 });
@@ -199,7 +198,7 @@ export function LocationInterface({ top }: { top: number }) {
         width={width}
         height={height}
         active
-        selected={{ lat: spot.lat, lng: spot.lng, icon: editing?.icon ?? 'pin' }}
+        selected={{ lat: spot.lat, lng: spot.lng, icon: spot.icon ?? 'pin' }}
         enter={{ ...view, streets: true }}
         focus={view}
         area={isArea ? spot.area : undefined}
@@ -246,22 +245,33 @@ export function LocationInterface({ top }: { top: number }) {
     const parts = spot.parts ?? partsOf(spot);
     const complete = missingParts(parts, spot.kind).length === 0;
     const ok = complete && (!isArea || !!spot.area);
+    const icon = spot.icon ?? 'pin';
+    const label = spot.name.trim() || LABEL_ICONS.find((l) => l.icon === icon)?.name || 'Location';
+    // an edit's changes, so ✓ waits until there is one
+    const moved: Partial<SavedLocation> = {};
+    if (editing) {
+      if (spot.address !== editing.address) moved.address = spot.address;
+      if (spot.lat !== editing.lat || spot.lng !== editing.lng) Object.assign(moved, { lat: spot.lat, lng: spot.lng });
+      const area = isArea ? spot.area : undefined;
+      if (JSON.stringify(area) !== JSON.stringify(editing.area)) moved.area = area;
+      if (spot.buildingType !== editing.buildingType) moved.buildingType = spot.buildingType;
+      if ((spot.details ?? '') !== (editing.details ?? '')) moved.details = spot.details;
+      if (icon !== editing.icon) moved.icon = icon;
+      if (label !== editing.label) moved.label = label;
+    }
+    const ready = ok && (!editing || Object.keys(moved).length > 0);
+    // ✓ finishes here: everything (address, label) was set on this screen
     const confirm = () => {
-      if (editing) {
-        // Edit: what changed here rides along to the details panel
-        const moved: Partial<SavedLocation> = {};
-        if (spot.address !== editing.address) moved.address = spot.address;
-        if (spot.lat !== editing.lat || spot.lng !== editing.lng) Object.assign(moved, { lat: spot.lat, lng: spot.lng });
-        const area = isArea ? spot.area : undefined;
-        if (JSON.stringify(area) !== JSON.stringify(editing.area)) moved.area = area;
-        if (spot.buildingType !== editing.buildingType) moved.buildingType = spot.buildingType;
-        if ((spot.details ?? '') !== (editing.details ?? '')) moved.details = spot.details;
-        setForm({ kind: 'edit', loc: editing, moved, fromMap: true });
-      } else if (mode === 'search') {
+      if (editing) updateLocation(editing.id, moved);
+      else if (mode === 'search') {
         // Search only selects the place (LI 14)
-        pickLocation(spot, spot.name, spot.address, { area: isArea ? spot.area : undefined, buildingType: spot.buildingType, details: spot.details });
-        finish();
-      } else setForm({ kind: 'save', loc: placeToLocation(spot), fromMap: true }); // Add goes on to the save panel (LI 19)
+        pickLocation(spot, label, spot.address, { area: isArea ? spot.area : undefined, buildingType: spot.buildingType, details: spot.details, icon });
+      } else {
+        // Add puts it at the far right of the strip (LI 19)
+        const { id: _id, ...loc } = placeToLocation(spot);
+        saveLocation({ ...loc, icon, label });
+      }
+      finish();
     };
     const caption = isArea
       ? spot.area
@@ -282,35 +292,67 @@ export function LocationInterface({ top }: { top: number }) {
                 setSpot(null);
                 if (editing) finish();
               }}
-              // while the address panel is open it has the say: back and ✓ wait for its Cancel or Save
-              disabled={editAddress}
+              // while a panel is open it has the say: back and ✓ wait for its Cancel or Save
+              disabled={!!panel}
               hitSlop={10}
               accessibilityLabel="Back"
             >
               <BackIcon size={20} />
             </Pressable>
-            <T numberOfLines={1} style={styles.previewTitle}>
-              {spot.name}
-            </T>
+            {/* its label: tap to change the icon and name */}
+            <Pressable
+              onPress={() => {
+                beforeEdit.current = spot;
+                setPanel('label');
+              }}
+              disabled={!!panel}
+              style={styles.previewLabel}
+              accessibilityLabel={`Label: ${label}. Edit`}
+            >
+              <LocationGlyph icon={icon} selected size={28} />
+              <T numberOfLines={1} style={styles.previewTitle}>
+                {spot.name}
+              </T>
+            </Pressable>
             <Pressable
               onPress={confirm}
-              disabled={!ok || editAddress}
+              disabled={!ready || !!panel}
               hitSlop={10}
-              style={!ok && { opacity: 0.35 }}
+              style={!ready && { opacity: 0.35 }}
               accessibilityLabel="Use this location"
-              accessibilityState={{ disabled: !ok }}
+              accessibilityState={{ disabled: !ready }}
             >
               <CheckIcon size={22} />
             </Pressable>
           </View>
-          {editAddress ? (
+          {panel === 'label' ? (
+            <View style={[styles.form, styles.previewPanel]}>
+              <View style={styles.previewPanelHead}>
+                <Pressable
+                  onPress={() => {
+                    if (beforeEdit.current) setSpot(beforeEdit.current);
+                    setPanel(null);
+                  }}
+                  hitSlop={8}
+                  style={styles.headBtn}
+                  accessibilityLabel="Cancel editing label"
+                >
+                  <T style={styles.headText}>Cancel</T>
+                </Pressable>
+                <Pressable onPress={() => setPanel(null)} hitSlop={8} style={[styles.headBtn, styles.doneBtn]} accessibilityLabel="Save label">
+                  <T style={[styles.headText, { color: colors.white, fontWeight: '700' }]}>Save</T>
+                </Pressable>
+              </View>
+              <LabelEditor icon={icon} name={spot.name} onIcon={(i) => setSpot({ ...spot, icon: i })} onName={(name) => setSpot({ ...spot, name })} />
+            </View>
+          ) : editAddress ? (
             <View style={[styles.form, styles.previewPanel]}>
               {/* Cancel puts the address back; Save stays grey until the required boxes are filled */}
               <View style={styles.previewPanelHead}>
                 <Pressable
                   onPress={() => {
                     if (beforeEdit.current) setSpot(beforeEdit.current);
-                    setEditAddress(false);
+                    setPanel(null);
                   }}
                   hitSlop={8}
                   style={styles.headBtn}
@@ -319,7 +361,7 @@ export function LocationInterface({ top }: { top: number }) {
                   <T style={styles.headText}>Cancel</T>
                 </Pressable>
                 <Pressable
-                  onPress={() => setEditAddress(false)}
+                  onPress={() => setPanel(null)}
                   disabled={!complete}
                   hitSlop={8}
                   style={[styles.headBtn, styles.doneBtn, !complete && styles.doneOff]}
@@ -345,9 +387,11 @@ export function LocationInterface({ top }: { top: number }) {
             <Pressable
               onPress={() => {
                 beforeEdit.current = spot;
-                setEditAddress(true);
+                setPanel('address');
               }}
-              style={styles.previewAddress} accessibilityLabel={`Address: ${spot.address}. Edit`}>
+              style={styles.previewAddress}
+              accessibilityLabel={`Address: ${spot.address}. Edit`}
+            >
               <View style={{ flex: 1 }}>
                 {addressLines(spot.address).map((line, i) => (
                   <T key={i} style={styles.menuAddress}>
@@ -358,7 +402,7 @@ export function LocationInterface({ top }: { top: number }) {
               <T style={styles.previewEdit}>Edit</T>
             </Pressable>
           )}
-          {!editAddress && <T style={styles.dragHint}>{hint}</T>}
+          {!panel && <T style={styles.dragHint}>{hint}</T>}
         </View>
       </>
     );
@@ -635,6 +679,31 @@ function AddressEditor({
   );
 }
 
+/** the label's icon (Home, Work, School, Other) and its name; changing the icon keeps the name */
+function LabelEditor({ icon, name, onIcon, onName }: { icon: Icon; name: string; onIcon: (i: Icon) => void; onName: (n: string) => void }) {
+  return (
+    <>
+      <View style={styles.labelRow}>
+        {LABEL_ICONS.map((l) => {
+          const on = l.icon === icon;
+          return (
+            <Pressable key={l.icon} onPress={() => onIcon(l.icon)} style={[styles.chip, on && { backgroundColor: colors.black }]} accessibilityLabel={l.name}>
+              <PlaceIcon icon={l.icon} size={12} color={on ? colors.white : colors.black} />
+              <T style={[styles.chipText, on && { color: colors.white }]}>{l.name}</T>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={[styles.field, { paddingRight: 6 }]}>
+        <TextInput value={name} onChangeText={onName} placeholder="Name" placeholderTextColor={colors.muted} style={[styles.fieldText, { flex: 1 }]} accessibilityLabel="Name" />
+        <Pressable onPress={() => onName('')} hitSlop={8} style={styles.clear} accessibilityLabel="Clear name">
+          <CloseIcon size={9} color={colors.white} />
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
 function BuildingField({ value, onChange, small }: { value?: Building; onChange: (b: Building | undefined) => void; small?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
@@ -710,13 +779,12 @@ function MenuItem({ label, onPress, danger, last }: { label: string; onPress: ()
  * place) and LI 10 (delete one). Cancel | the location's icon | Save (or Delete).
  */
 function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => void; onDone: (patch: Partial<Omit<SavedLocation, 'id'>>) => void }) {
-  const { kind, loc, moved = {}, fromMap } = form;
+  const { kind, loc } = form;
   const { height } = useWindowDimensions();
-  const address = moved.address ?? loc.address;
+  const address = loc.address;
   const firstLine = loc.address.split(',')[0].trim();
-  // coming from the map screen they were already filled in there, under the address
-  const [building, setBuilding] = useState<Building | undefined>('buildingType' in moved ? moved.buildingType : loc.buildingType);
-  const [details, setDetails] = useState<string | undefined>('details' in moved ? moved.details : loc.details);
+  const [building, setBuilding] = useState<Building | undefined>(loc.buildingType);
+  const [details, setDetails] = useState<string | undefined>(loc.details);
   // saving: Other by default, named after the address's first line (Here) or the place
   const [icon, setIcon] = useState<Icon>(kind === 'save' ? 'pin' : loc.icon);
   const [name, setName] = useState(kind === 'save' ? (loc.icon === 'here' ? firstLine : loc.label) : loc.label);
@@ -727,14 +795,12 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
     buildingType: building,
     details: details?.trim() || undefined,
     ...(withLabel ? { icon, label } : {}),
-    ...moved,
   };
   // an edit can only be saved once it would change something (changing a box back counts as no change)
   const changed =
     building !== loc.buildingType ||
     (patch.details ?? '') !== (loc.details ?? '') ||
-    (withLabel && (icon !== loc.icon || label !== loc.label)) ||
-    Object.keys(moved).length > 0;
+    (withLabel && (icon !== loc.icon || label !== loc.label));
   const canSubmit = kind !== 'edit' || changed;
   const submitLabel = kind === 'delete' ? 'Delete' : 'Save';
 
@@ -792,38 +858,13 @@ function LocationForm({ form, onCancel, onDone }: { form: Form; onCancel: () => 
           ))}
         </View>
 
-        {!fromMap && (
-          <>
-            <BuildingField value={building} onChange={setBuilding} />
-            <DetailsFields value={details} onChange={setDetails} />
-          </>
-        )}
+        <BuildingField value={building} onChange={setBuilding} />
+        <DetailsFields value={details} onChange={setDetails} />
 
         {withLabel && (
           <>
             <T style={styles.fieldLabel}>Label</T>
-            <View style={styles.labelRow}>
-              {LABEL_ICONS.map((l) => {
-                const on = l.icon === icon;
-                return (
-                  <Pressable
-                    key={l.icon}
-                    onPress={() => setIcon(l.icon)}
-                    style={[styles.chip, on && { backgroundColor: colors.black }]}
-                    accessibilityLabel={l.name}
-                  >
-                    <PlaceIcon icon={l.icon} size={12} color={on ? colors.white : colors.black} />
-                    <T style={[styles.chipText, on && { color: colors.white }]}>{l.name}</T>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <View style={[styles.field, { paddingRight: 6 }]}>
-              <TextInput value={name} onChangeText={setName} placeholder="Name" placeholderTextColor={colors.muted} style={[styles.fieldText, { flex: 1 }]} />
-              <Pressable onPress={() => setName('')} hitSlop={8} style={styles.clear} accessibilityLabel="Clear name">
-                <CloseIcon size={9} color={colors.white} />
-              </Pressable>
-            </View>
+            <LabelEditor icon={icon} name={name} onIcon={setIcon} onName={setName} />
           </>
         )}
       </ScrollView>
@@ -932,7 +973,8 @@ const styles = StyleSheet.create({
   row: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#333' },
   rowTitle: { fontSize: 15, fontWeight: '600', color: colors.white },
   rowSub: { fontSize: 12, color: colors.hairline },
-  previewTitle: { flex: 1, fontSize: 18, fontWeight: '600' },
+  previewTitle: { flexShrink: 1, fontSize: 18, fontWeight: '600' },
+  previewLabel: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   menu: { position: 'absolute', top: 66, width: MENU_W, backgroundColor: colors.white, borderRadius: 8, borderWidth: 1, borderColor: colors.black, overflow: 'hidden' },
   menuHead: { backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.black },
   menuAddress: { fontSize: 12, color: colors.white },

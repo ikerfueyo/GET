@@ -53,7 +53,7 @@ interface AppState {
   selected: SavedLocation;
   selectLocation: (id: string) => void;
   /** a location picked on the globe or found by search; sits between Search and Here */
-  pickLocation: (p: LatLng, label?: string, address?: string, extra?: Pick<SavedLocation, 'buildingType' | 'details' | 'area'>) => void;
+  pickLocation: (p: LatLng, label?: string, address?: string, extra?: Pick<SavedLocation, 'buildingType' | 'details' | 'area' | 'icon'>) => void;
   /** places found with Location Search / Add, newest first (LI 11 / LI 16 "recent") */
   recentPlaces: Place[];
   addRecentPlace: (p: Place) => void;
@@ -217,7 +217,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setFocusKey((k) => k + 1);
   };
 
-  const pickLocation = (p: LatLng, label = 'Pinned', address?: string, extra?: Pick<SavedLocation, 'buildingType' | 'details' | 'area'>) => {
+  const pickLocation = (p: LatLng, label = 'Pinned', address?: string, extra?: Pick<SavedLocation, 'buildingType' | 'details' | 'area' | 'icon'>) => {
     setPicked({ id: 'loc_picked', label, icon: 'pin', address: address ?? `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`, lat: p.lat, lng: p.lng, ...extra });
     setSelectedId('loc_picked');
     setFocusKey((k) => k + 1);
