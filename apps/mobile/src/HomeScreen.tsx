@@ -34,7 +34,6 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
     if (revealed) Animated.timing(intro, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   }, [revealed, intro]);
 
-  const [covered, setCovered] = useState(false);
   const [street, setStreet] = useState(false);
   const fade = useRef(new Animated.Value(0)).current;
   const keys = useRef(0);
@@ -93,7 +92,7 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
         {street && <StatusBar style="dark" />}
 
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          {panel === 'location' && <LocationInterface top={top} onCover={setCovered} />}
+          {panel === 'location' && <LocationInterface top={top} />}
           {panel === 'orders' && (
             <OrdersInterface
               top={panelTop}
@@ -108,8 +107,8 @@ export function HomeScreen({ revealed = true }: { revealed?: boolean }) {
         </View>
       </Animated.View>
 
-      {/* a Location panel (search, edit, save) has the whole top of the screen */}
-      {!(panel === 'location' && covered) && <SideBar top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} slideX={intro.interpolate({ inputRange: [0, 1], outputRange: [-60, 0] })} />}
+      {/* the side bar stays over every panel (only the Search sheet goes over it) */}
+      <SideBar top={top + (panel === 'location' ? 96 : 40)} bounds={{ width, height }} slideX={intro.interpolate({ inputRange: [0, 1], outputRange: [-60, 0] })} />
 
       <SearchInterface
         ref={searchRef}

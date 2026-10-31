@@ -83,7 +83,7 @@ function fitArea(area: LatLng[], width: number, height: number): { point: LatLng
   return { point: { lat: unmerc((y0 + y1) / 2), lng: ((x0 + x1) / 2) * 360 - 180 }, zoom: Math.max(2.2, Math.min(17, zoom)) };
 }
 
-export function LocationInterface({ top, onCover }: { top: number; onCover?: (covered: boolean) => void }) {
+export function LocationInterface({ top }: { top: number }) {
   const { locations, selected, selectLocation, pickLocation, saveLocation, updateLocation, removeLocation, recentPlaces, addRecentPlace } = useApp();
   const { width, height } = useWindowDimensions();
   const [mode, setMode] = useState<'strip' | 'search' | 'add'>('strip');
@@ -182,14 +182,6 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
     // the searched name stays on top; only the address follows the pin
     setSpot((s) => (s ? { ...s, address: place.address, parts: place.parts, lat: place.lat, lng: place.lng } : s)),
   );
-
-  // anything bigger than the strip and its menu covers the side bar's spot
-  const covered = mode !== 'strip' || !!form || !!preview;
-  useEffect(() => {
-    onCover?.(covered);
-    return () => onCover?.(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [covered]);
 
   /** `index` in the scrolling part, or null for the searched place before the divider */
   const openMenu = (id: string, index: number | null) => {
@@ -290,6 +282,8 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
                 setSpot(null);
                 if (editing) finish();
               }}
+              // while the address panel is open it has the say: back and ✓ wait for its Cancel or Save
+              disabled={editAddress}
               hitSlop={10}
               accessibilityLabel="Back"
             >
@@ -300,7 +294,7 @@ export function LocationInterface({ top, onCover }: { top: number; onCover?: (co
             </T>
             <Pressable
               onPress={confirm}
-              disabled={!ok}
+              disabled={!ok || editAddress}
               hitSlop={10}
               style={!ok && { opacity: 0.35 }}
               accessibilityLabel="Use this location"
